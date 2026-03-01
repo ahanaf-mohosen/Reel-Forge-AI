@@ -1,0 +1,3 @@
+# Ignore upload and output folders
+uploads/
+outputs/
