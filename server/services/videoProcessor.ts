@@ -658,7 +658,13 @@ export async function processVideo(
       120,
     );
     
-    const { projectTitle, clips: highlights } = await detectHighlights(transcript, segments, options, duration);
+    const { projectTitle, clips: highlights } = await detectHighlights(
+      transcript,
+      segments,
+      options,
+      duration,
+      projectId,
+    );
     
     // Update project with AI-generated title
     await storage.updateProject(projectId, { name: projectTitle });

@@ -15,6 +15,17 @@ export type ResolvedAdminDateRange = {
   dayCount: number;
 };
 
+function formatLocalDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function toAdminDateKey(date: Date | string): string {
+  return formatLocalDateKey(new Date(date));
+}
+
 function startOfDay(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -67,7 +78,7 @@ export function resolveAdminDateRange(
       preset: "custom",
       start: safeStart,
       end: customEnd,
-      label: `${safeStart.toISOString().slice(0, 10)} – ${customEnd.toISOString().slice(0, 10)}`,
+      label: `${formatLocalDateKey(safeStart)} – ${formatLocalDateKey(customEnd)}`,
       dayCount: Math.max(1, dayCount),
     };
   }
@@ -110,7 +121,7 @@ export function buildDailyBuckets(start: Date, end: Date): string[] {
   const last = startOfDay(end);
 
   while (cursor <= last) {
-    keys.push(cursor.toISOString().slice(0, 10));
+    keys.push(formatLocalDateKey(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }
 

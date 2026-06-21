@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import type { UploadOptions } from "@shared/schema";
+import { estimateTokensFromText } from "@shared/operatingCost";
+import { tokenUsageStorage } from "../integrations/admin/tokenUsageStorage";
 
 /**
  * AI Gateway
@@ -76,6 +78,24 @@ function isOpenAiQuotaError(error: unknown): boolean {
     err.code === "insufficient_quota" ||
     err.error?.code === "insufficient_quota"
   );
+}
+
+async function recordAiTokens(
+  tokens: number,
+  source: string,
+  projectId?: string,
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await tokenUsageStorage.recordUsage({
+      tokens,
+      source,
+      projectId,
+      metadata,
+    });
+  } catch (error) {
+    console.error("[aiGateway] Failed to record token usage:", error);
+  }
 }
 
 function clipTranscriptSlice(
@@ -173,6 +193,7 @@ export async function detectHighlightsProduction(
   segments: TranscriptSegment[],
   options: UploadOptions,
   videoDuration: number,
+  projectId?: string,
 ): Promise<HighlightResult> {
   const openai = getOpenAI();
   if (!openai) {
@@ -207,6 +228,11 @@ Return ONLY valid JSON: { "projectTitle": "...", "clips": [{ "start", "end", "re
     max_tokens: 2048,
   });
 
+  const usageTokens = response.usage?.total_tokens ?? estimateTokensFromText(prompt);
+  await recordAiTokens(usageTokens, "highlight_detection", projectId, {
+    model: "gpt-4o-mini",
+  });
+
   const content =
     response.choices[0]?.message?.content ||
     '{"clips":[],"projectTitle":"Video Highlights"}';
@@ -230,6 +256,7 @@ export async function generateReelCaptions(
   clips: HighlightClip[],
   segments: TranscriptSegment[],
   reelPrompt?: string,
+  projectId?: string,
 ): Promise<HighlightClip[]> {
   const openai = getOpenAI();
   if (!openai || clips.length === 0 || !reelPrompt?.trim()) {
@@ -271,6 +298,11 @@ Return ONLY valid JSON: { "captions": ["caption for clip 0", "..."] } — same o
       max_tokens: 1024,
     });
 
+    const usageTokens = response.usage?.total_tokens ?? estimateTokensFromText(prompt);
+    await recordAiTokens(usageTokens, "caption_generation", projectId, {
+      model: "gpt-4o-mini",
+    });
+
     const content = response.choices[0]?.message?.content || "{}";
     const result = JSON.parse(content);
     const captions: string[] = Array.isArray(result.captions) ? result.captions : [];
@@ -302,13 +334,27 @@ export async function detectHighlights(
   segments: TranscriptSegment[],
   options: UploadOptions,
   videoDuration: number,
+  projectId?: string,
 ): Promise<HighlightResult> {
   if (!shouldUseOpenAiForReels(options)) {
-    return detectHighlightsDemo(transcript, segments, options, videoDuration);
+    const result = detectHighlightsDemo(transcript, segments, options, videoDuration);
+    const estimatedTokens = estimateTokensFromText(
+      transcript + JSON.stringify(segments.slice(0, 80)) + (options.reelPrompt || ""),
+    );
+    await recordAiTokens(estimatedTokens, "highlight_detection_demo", projectId, {
+      mode: "demo",
+    });
+    return result;
   }
 
   try {
-    return await detectHighlightsProduction(transcript, segments, options, videoDuration);
+    return await detectHighlightsProduction(
+      transcript,
+      segments,
+      options,
+      videoDuration,
+      projectId,
+    );
   } catch (error) {
     console.error("[aiGateway] OpenAI highlight detection failed:", error);
     if (isOpenAiQuotaError(error)) {

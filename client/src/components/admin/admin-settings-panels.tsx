@@ -44,7 +44,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, getQueryFn } from "@/lib/queryClient";
+import { adminDashboardQueryOptions, apiRequest, getQueryFn } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { PackagePriceDisplay, formatDiscountedPreview } from "@/components/package-price-display";
 import { clampDiscountPercent } from "@shared/billingPricing";
@@ -997,6 +997,7 @@ export function SocialAccountsPanel() {
 export function BillingOverviewPanel() {
   const { data, isLoading } = useQuery<AdminBillingOverview>({
     queryKey: ["/api/admin/billing/overview"],
+    ...adminDashboardQueryOptions,
   });
 
   return (

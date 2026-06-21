@@ -13,6 +13,7 @@ export type MergedFinancialSummary = {
   trendChangePercent: number;
   billingRevenueCents: number;
   projectRevenueCents: number;
+  planAdoptionOperatingCostCents: number;
   daily: ProfitTrendPoint[];
 };
 
@@ -24,23 +25,38 @@ export function mergeAdminFinancialSummary(
   },
   billingDaily: { date: string; revenueCents: number }[],
   billingRevenueCents: number,
+  planAdoptionOperatingCostCents: number,
+  planAdoptionDaily: { date: string; operatingCostCents: number }[] = [],
 ): MergedFinancialSummary {
   const billingByDate = new Map(billingDaily.map((day) => [day.date, day.revenueCents]));
+  const projectByDate = new Map(projectDaily.map((day) => [day.date, day]));
+  const planCostByDate = new Map(
+    planAdoptionDaily.map((day) => [day.date, day.operatingCostCents]),
+  );
 
-  const daily = projectDaily.map((day) => {
-    const billingRevenue = billingByDate.get(day.date) ?? 0;
-    const revenueCents = day.revenueCents + billingRevenue;
-    const costCents = day.costCents;
+  const allDates = Array.from(
+    new Set([
+      ...projectDaily.map((day) => day.date),
+      ...billingDaily.map((day) => day.date),
+      ...planAdoptionDaily.map((day) => day.date),
+    ]),
+  ).sort();
+
+  const daily = allDates.map((date) => {
+    const project = projectByDate.get(date);
+    const billingRevenue = billingByDate.get(date) ?? 0;
+    const revenueCents = (project?.revenueCents ?? 0) + billingRevenue;
+    const costCents = (project?.costCents ?? 0) + (planCostByDate.get(date) ?? 0);
     return {
-      date: day.date,
+      date,
       revenueCents,
       costCents,
       profitCents: revenueCents - costCents,
     };
   });
 
-  const grossRevenueCents = daily.reduce((sum, day) => sum + day.revenueCents, 0);
-  const operatingCostCents = daily.reduce((sum, day) => sum + day.costCents, 0);
+  const grossRevenueCents = projectTotals.totalRevenueCents + billingRevenueCents;
+  const operatingCostCents = projectTotals.totalCostCents + planAdoptionOperatingCostCents;
   const netProfitCents = grossRevenueCents - operatingCostCents;
   const profitMargin =
     grossRevenueCents > 0 ? (netProfitCents / grossRevenueCents) * 100 : 0;
@@ -63,6 +79,7 @@ export function mergeAdminFinancialSummary(
     trendChangePercent,
     billingRevenueCents,
     projectRevenueCents: projectTotals.totalRevenueCents,
+    planAdoptionOperatingCostCents,
     daily,
   };
 }

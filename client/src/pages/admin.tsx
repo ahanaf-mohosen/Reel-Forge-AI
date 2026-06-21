@@ -80,7 +80,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
+import {
+  adminDashboardQueryOptions,
+  apiRequest,
+  getQueryFn,
+  invalidateAdminDashboardQueries,
+  queryClient,
+} from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import {
   ADMIN_DATE_RANGE_OPTIONS,
@@ -118,6 +124,15 @@ type AdminSummary = {
     billingRevenueCents?: number;
     demoPaymentCount?: number;
     paymentCount?: number;
+    tokenOperatingCostCents?: number;
+    planAdoptionOperatingCostCents?: number;
+    planAdoptionOperating?: {
+      totalCreditsGranted: number;
+      operatingCostCents: number;
+      blockCount: number;
+      creditsPerBlock: number;
+      costPerBlockCents: number;
+    };
     daily: {
       date: string;
       revenueCents: number;
@@ -143,6 +158,8 @@ type AdminSummary = {
     purchaseCount: number;
     customerCount: number;
     revenueCents: number;
+    creditsGranted: number;
+    operatingCostCents: number;
   }[];
   currentPlans?: {
     planId: string;
@@ -385,6 +402,7 @@ export default function Admin() {
   } = useQuery<AdminSummary>({
     queryKey: ["/api/admin/summary", dateRangePreset, customStartDate, customEndDate],
     enabled: authFetched && isAdmin,
+    ...adminDashboardQueryOptions,
     queryFn: async () => {
       const params = new URLSearchParams({ range: dateRangePreset });
       if (dateRangePreset === "custom") {
@@ -406,11 +424,13 @@ export default function Admin() {
   const { data: adminUsers, isLoading: usersLoading } = useQuery<AdminUser[]>({
     queryKey: ["/api/admin/users"],
     enabled: authFetched && isAdmin,
+    ...adminDashboardQueryOptions,
   });
 
   const { data: auditLogs, isLoading: auditLoading } = useQuery<AuditLog[]>({
     queryKey: ["/api/admin/audit-logs"],
     enabled: authFetched && isAdmin,
+    ...adminDashboardQueryOptions,
   });
 
   const { data: systemConfig } = useQuery<{
@@ -432,8 +452,7 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/audit-logs"] });
+      void invalidateAdminDashboardQueries();
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({
         title: "Changes saved",
@@ -496,6 +515,8 @@ export default function Admin() {
         customerCount: purchase?.customerCount ?? 0,
         purchaseCount: purchase?.purchaseCount ?? 0,
         revenueCents: purchase?.revenueCents ?? 0,
+        creditsGranted: purchase?.creditsGranted ?? 0,
+        operatingCostCents: purchase?.operatingCostCents ?? 0,
         currentUsers: currentByPlan.get(planId) ?? 0,
       };
     }).sort((a, b) => b.purchaseCount - a.purchaseCount || b.currentUsers - a.currentUsers);
@@ -538,9 +559,7 @@ export default function Admin() {
               variant="outline"
               size="sm"
               onClick={() => {
-                queryClient.invalidateQueries({ queryKey: ["/api/admin/summary"] });
-                queryClient.invalidateQueries({ queryKey: ["/api/admin/payments"] });
-                refetchSummary();
+                void invalidateAdminDashboardQueries().then(() => refetchSummary());
               }}
               disabled={summaryFetching}
               className="shrink-0"
@@ -737,6 +756,15 @@ export default function Admin() {
                     <p className="mt-0.5 text-xl font-semibold tabular-nums">
                       {formatCurrency(summary?.profit.totalCostCents ?? 0)}
                     </p>
+                    {(summary?.profit.planAdoptionOperating?.totalCreditsGranted ?? 0) > 0 && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {summary.profit.planAdoptionOperating!.blockCount} block
+                        {summary.profit.planAdoptionOperating!.blockCount === 1 ? "" : "s"} ·{" "}
+                        {summary.profit.planAdoptionOperating!.totalCreditsGranted.toLocaleString()}{" "}
+                        credits sold @ {formatCurrency(summary.profit.planAdoptionOperating!.costPerBlockCents)}{" "}
+                        per {summary.profit.planAdoptionOperating!.creditsPerBlock.toLocaleString()}
+                      </p>
+                    )}
                   </div>
                   <Activity className="h-5 w-5 text-muted-foreground/60" />
                 </div>
@@ -780,7 +808,8 @@ export default function Admin() {
               <div>
                 <CardTitle className="text-base font-semibold">Plan Adoption</CardTitle>
                 <CardDescription>
-                  Purchases in {rangeLabel.toLowerCase()} and current active plans
+                  Purchases in {rangeLabel.toLowerCase()} and current active plans · operating cost
+                  updates from credits sold
                 </CardDescription>
               </div>
             </div>
@@ -798,6 +827,8 @@ export default function Admin() {
                     <TableHead className="text-right">Customers</TableHead>
                     <TableHead className="text-right">Purchases</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="text-right">Credits</TableHead>
+                    <TableHead className="text-right">Op. cost</TableHead>
                     <TableHead className="text-right">Active now</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -809,6 +840,12 @@ export default function Admin() {
                       <TableCell className="text-right tabular-nums">{row.purchaseCount}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {formatCurrency(row.revenueCents)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.creditsGranted.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-amber-700 dark:text-amber-400">
+                        {formatCurrency(row.operatingCostCents)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{row.currentUsers}</TableCell>
                     </TableRow>

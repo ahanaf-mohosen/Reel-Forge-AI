@@ -57,3 +57,19 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/** Refetch all admin dashboard queries after billing or user changes. */
+export function invalidateAdminDashboardQueries() {
+  return queryClient.invalidateQueries({
+    queryKey: ["/api/admin"],
+    refetchType: "all",
+  });
+}
+
+export const adminDashboardQueryOptions = {
+  staleTime: 0,
+  refetchOnMount: "always" as const,
+  refetchOnWindowFocus: true,
+  /** Poll while admin views are open so other users' purchases appear live. */
+  refetchInterval: 10_000,
+};

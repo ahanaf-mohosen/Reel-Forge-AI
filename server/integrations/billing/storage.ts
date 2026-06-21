@@ -1,6 +1,12 @@
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
-import { buildDailyBuckets } from "@shared/adminDateRange";
+import { buildDailyBuckets, toAdminDateKey } from "@shared/adminDateRange";
+import {
+  calculateTokenBlockOperatingCostCents,
+  OPERATING_COST_PER_BLOCK_CENTS,
+  TOKENS_PER_OPERATING_COST_BLOCK,
+} from "@shared/operatingCost";
+import { planStorage } from "./planStorage";
 import {
   DEFAULT_SIGNUP_CREDITS,
   type BillingPlanId,
@@ -8,7 +14,6 @@ import {
   calculateProcessingCost,
   isDemoBillingEnabled,
 } from "./config";
-import { planStorage } from "./planStorage";
 import type { UploadOptions } from "@shared/schema";
 
 export type BillingPayment = {
@@ -63,6 +68,17 @@ export type PlanPurchaseStat = {
   purchaseCount: number;
   customerCount: number;
   revenueCents: number;
+  creditsGranted: number;
+  operatingCostCents: number;
+};
+
+export type PlanAdoptionOperatingStats = {
+  totalCreditsGranted: number;
+  operatingCostCents: number;
+  blockCount: number;
+  tokensPerBlock: number;
+  costPerBlockCents: number;
+  daily: { date: string; creditsGranted: number; operatingCostCents: number }[];
 };
 
 export type CurrentPlanStat = {
@@ -369,6 +385,8 @@ class BillingStorage {
       `);
 
       payment.id = inserted.rows[0]?.id || payment.id;
+      memoryWallets.set(userId, { balance: newBalance, planId: packageId });
+      memoryPayments.unshift(payment);
     }
 
     await this.recordTransaction(userId, {
@@ -455,7 +473,7 @@ class BillingStorage {
       }
 
       for (const payment of recentInRange) {
-        const key = new Date(payment.createdAt).toISOString().slice(0, 10);
+        const key = toAdminDateKey(payment.createdAt);
         if (byDate.has(key)) {
           byDate.set(key, (byDate.get(key) || 0) + payment.amountCents);
         }
@@ -518,7 +536,7 @@ class BillingStorage {
       }
 
       for (const payment of paymentsInRange) {
-        const key = new Date(payment.createdAt).toISOString().slice(0, 10);
+        const key = toAdminDateKey(payment.createdAt);
         if (byDate.has(key)) {
           byDate.set(key, (byDate.get(key) || 0) + payment.amountCents);
         }
@@ -535,7 +553,12 @@ class BillingStorage {
           revenueCents,
         })),
       };
-    } catch {
+    } catch (error) {
+      if (!this.useMemoryFallback) {
+        console.error("Failed to load billing stats from database:", error);
+        throw error;
+      }
+
       const recentInRange = memoryPayments.filter(
         (p) =>
           p.status === "completed" &&
@@ -549,7 +572,7 @@ class BillingStorage {
       }
 
       for (const payment of recentInRange) {
-        const key = new Date(payment.createdAt).toISOString().slice(0, 10);
+        const key = toAdminDateKey(payment.createdAt);
         if (byDate.has(key)) {
           byDate.set(key, (byDate.get(key) || 0) + payment.amountCents);
         }
@@ -584,10 +607,12 @@ class BillingStorage {
           purchaseCount: 0,
           customerCount: 0,
           revenueCents: 0,
+          creditsGranted: 0,
           _users: new Set<string>(),
         };
         existing.purchaseCount += 1;
         existing.revenueCents += payment.amountCents;
+        existing.creditsGranted += payment.creditsGranted;
         (existing as PlanPurchaseStat & { _users: Set<string> })._users.add(payment.userId);
         grouped.set(payment.packageId, existing);
       }
@@ -599,6 +624,8 @@ class BillingStorage {
           purchaseCount: row.purchaseCount,
           customerCount: (row as PlanPurchaseStat & { _users: Set<string> })._users.size,
           revenueCents: row.revenueCents,
+          creditsGranted: row.creditsGranted,
+          operatingCostCents: 0,
         }))
         .sort((a, b) => b.purchaseCount - a.purchaseCount);
     }
@@ -610,12 +637,14 @@ class BillingStorage {
         purchase_count: number;
         customer_count: number;
         revenue_cents: number;
+        credits_granted: number;
       }>(sql`
         SELECT package_id,
                package_name,
                COUNT(*)::int AS purchase_count,
                COUNT(DISTINCT user_id)::int AS customer_count,
-               COALESCE(SUM(amount_cents), 0)::int AS revenue_cents
+               COALESCE(SUM(amount_cents), 0)::int AS revenue_cents,
+               COALESCE(SUM(credits_granted), 0)::int AS credits_granted
         FROM billing_payments
         WHERE status = 'completed'
           AND created_at >= ${start}
@@ -630,10 +659,99 @@ class BillingStorage {
         purchaseCount: row.purchase_count,
         customerCount: row.customer_count,
         revenueCents: row.revenue_cents,
+        creditsGranted: row.credits_granted,
+        operatingCostCents: 0,
       }));
-    } catch {
+    } catch (error) {
+      if (!this.useMemoryFallback) {
+        console.error("Failed to load plan purchase breakdown:", error);
+        throw error;
+      }
       return [];
     }
+  }
+
+  async getPlanAdoptionOperatingStats(range: {
+    start: Date;
+    end: Date;
+  }): Promise<PlanAdoptionOperatingStats> {
+    const start = new Date(range.start);
+    const end = new Date(range.end);
+
+    const paymentsInRange: { creditsGranted: number; createdAt: string }[] = [];
+
+    if (this.useMemoryFallback) {
+      for (const payment of memoryPayments) {
+        if (payment.status !== "completed") continue;
+        const created = new Date(payment.createdAt);
+        if (created < start || created > end) continue;
+        paymentsInRange.push({
+          creditsGranted: payment.creditsGranted,
+          createdAt: payment.createdAt,
+        });
+      }
+    } else {
+      try {
+        const rows = await db.execute<{
+          credits_granted: number;
+          created_at: Date;
+        }>(sql`
+          SELECT credits_granted, created_at
+          FROM billing_payments
+          WHERE status = 'completed'
+            AND created_at >= ${start}
+            AND created_at <= ${end}
+          ORDER BY created_at ASC
+        `);
+
+        for (const row of rows.rows) {
+          paymentsInRange.push({
+            creditsGranted: row.credits_granted,
+            createdAt: new Date(row.created_at).toISOString(),
+          });
+        }
+      } catch (error) {
+        if (!this.useMemoryFallback) {
+          console.error("Failed to load plan adoption operating stats:", error);
+          throw error;
+        }
+      }
+    }
+
+    const byDate = new Map<string, number>();
+    for (const key of buildDailyBuckets(start, end)) {
+      byDate.set(key, 0);
+    }
+
+    let totalCreditsGranted = 0;
+    for (const payment of paymentsInRange) {
+      totalCreditsGranted += payment.creditsGranted;
+      const key = toAdminDateKey(payment.createdAt);
+      if (byDate.has(key)) {
+        byDate.set(key, (byDate.get(key) || 0) + payment.creditsGranted);
+      }
+    }
+
+    const daily = Array.from(byDate.entries()).map(([date, creditsGranted]) => ({
+      date,
+      creditsGranted,
+      operatingCostCents: calculateTokenBlockOperatingCostCents(creditsGranted),
+    }));
+
+    const operatingCostCents = calculateTokenBlockOperatingCostCents(totalCreditsGranted);
+    const blockCount =
+      totalCreditsGranted > 0
+        ? Math.ceil(totalCreditsGranted / TOKENS_PER_OPERATING_COST_BLOCK)
+        : 0;
+
+    return {
+      totalCreditsGranted,
+      operatingCostCents,
+      blockCount,
+      tokensPerBlock: TOKENS_PER_OPERATING_COST_BLOCK,
+      costPerBlockCents: OPERATING_COST_PER_BLOCK_CENTS,
+      daily,
+    };
   }
 
   async getCurrentPlanCounts(): Promise<CurrentPlanStat[]> {
@@ -657,7 +775,11 @@ class BillingStorage {
         planId: row.plan_id as BillingPlanId,
         userCount: row.user_count,
       }));
-    } catch {
+    } catch (error) {
+      if (!this.useMemoryFallback) {
+        console.error("Failed to load current plan counts:", error);
+        throw error;
+      }
       return [];
     }
   }

@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, invalidateAdminDashboardQueries, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { PackagePriceDisplay } from "@/components/package-price-display";
 
@@ -58,11 +58,9 @@ export function BillingPanel() {
       const res = await apiRequest("POST", "/api/billing/demo-purchase", payload);
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/billing/summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/payments"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/audit-logs"] });
+      await invalidateAdminDashboardQueries();
 
       setCheckoutPkg(null);
       setLastReceipt({

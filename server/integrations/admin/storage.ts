@@ -1,6 +1,6 @@
 import { desc, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { buildDailyBuckets } from "@shared/adminDateRange";
+import { buildDailyBuckets, toAdminDateKey } from "@shared/adminDateRange";
 import {
   adminAuditLogs,
   adminProfitEvents,
@@ -45,7 +45,8 @@ export function calculateEstimatedProfitMetrics(input: {
 }): { revenueCents: number; costCents: number; profitCents: number } {
   const durationMinutes = Math.max(1, input.videoDurationSeconds / 60);
   const revenueCents = Math.round(4999 + input.clipsCount * 1799 + durationMinutes * 45);
-  const costCents = Math.round(1299 + input.clipsCount * 350 + durationMinutes * 28);
+  // Operating cost is tracked separately via token usage ($199.99 per 50k tokens).
+  const costCents = 0;
 
   return {
     revenueCents,
@@ -189,7 +190,7 @@ class AdminAuditStorage implements IAdminAuditStorage {
     }
 
     for (const row of relevantRows) {
-      const key = new Date(row.createdAt).toISOString().slice(0, 10);
+      const key = toAdminDateKey(row.createdAt);
       const bucket = byDate.get(key);
       if (!bucket) continue;
       bucket.revenueCents += row.revenueCents;

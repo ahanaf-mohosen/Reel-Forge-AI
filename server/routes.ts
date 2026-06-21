@@ -14,6 +14,7 @@ import socialAuthRoutes from "./integrations/social/routes";
 import socialUploadRoutes from "./integrations/social/upload";
 import { socialMediaStorage } from "./integrations/social/storage";
 import { adminAuditStorage, calculateEstimatedProfitMetrics } from "./integrations/admin/storage";
+import { tokenUsageStorage } from "./integrations/admin/tokenUsageStorage";
 import { announcementStorage } from "./integrations/admin/announcementStorage";
 import { billingStorage } from "./integrations/billing/storage";
 import { planStorage } from "./integrations/billing/planStorage";
@@ -254,6 +255,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   await adminAuditStorage.ensureSchema();
+  await tokenUsageStorage.ensureSchema();
   await billingStorage.ensureSchema();
   await planStorage.ensureSchema();
   await announcementStorage.ensureSchema();
@@ -853,7 +855,7 @@ export async function registerRoutes(
         start: dateRange.start,
         end: dateRange.end,
       });
-      const [billingStats, planPurchases, currentPlans] = await Promise.all([
+      const [billingStats, planPurchases, currentPlans, planAdoptionOperating] = await Promise.all([
         billingStorage.getAdminBillingStats({
           start: dateRange.start,
           end: dateRange.end,
@@ -863,16 +865,42 @@ export async function registerRoutes(
           end: dateRange.end,
         }),
         billingStorage.getCurrentPlanCounts(),
+        billingStorage.getPlanAdoptionOperatingStats({
+          start: dateRange.start,
+          end: dateRange.end,
+        }),
       ]);
 
+      const planPurchasesWithOperatingCost = planPurchases.map((plan) => ({
+        ...plan,
+        operatingCostCents:
+          planAdoptionOperating.totalCreditsGranted > 0
+            ? Math.round(
+                planAdoptionOperating.operatingCostCents *
+                  (plan.creditsGranted / planAdoptionOperating.totalCreditsGranted),
+              )
+            : 0,
+      }));
+
+      const projectDaily = profitSummary.daily.map((day) => ({
+        ...day,
+        costCents: 0,
+        profitCents: day.revenueCents,
+      }));
+
       const financials = mergeAdminFinancialSummary(
-        profitSummary.daily,
+        projectDaily,
         {
           totalRevenueCents: profitSummary.totalRevenueCents,
-          totalCostCents: profitSummary.totalCostCents,
+          totalCostCents: 0,
         },
         billingStats.daily,
         billingStats.totalRevenueCents,
+        planAdoptionOperating.operatingCostCents,
+        planAdoptionOperating.daily.map((day) => ({
+          date: day.date,
+          operatingCostCents: day.operatingCostCents,
+        })),
       );
 
       const userSummaries = await Promise.all(users.map((u) => toSafeUser(u)));
@@ -916,6 +944,14 @@ export async function registerRoutes(
           daily: financials.daily,
           billingRevenueCents: financials.billingRevenueCents,
           projectRevenueCents: financials.projectRevenueCents,
+          planAdoptionOperatingCostCents: financials.planAdoptionOperatingCostCents,
+          planAdoptionOperating: {
+            totalCreditsGranted: planAdoptionOperating.totalCreditsGranted,
+            operatingCostCents: planAdoptionOperating.operatingCostCents,
+            blockCount: planAdoptionOperating.blockCount,
+            creditsPerBlock: planAdoptionOperating.tokensPerBlock,
+            costPerBlockCents: planAdoptionOperating.costPerBlockCents,
+          },
           paymentCount: billingStats.paymentCount,
         },
         billing: {
@@ -930,7 +966,7 @@ export async function registerRoutes(
           end: dateRange.end.toISOString(),
           dayCount: dateRange.dayCount,
         },
-        planPurchases,
+        planPurchases: planPurchasesWithOperatingCost,
         currentPlans,
       });
     } catch (error) {
