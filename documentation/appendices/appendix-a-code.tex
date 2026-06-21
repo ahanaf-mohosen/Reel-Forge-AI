@@ -1,0 +1,704 @@
+\chapter{Code Samples}
+\label{appendix:code}
+
+This appendix provides key code samples demonstrating the implementation of critical system components.
+
+\section{Backend Implementation}
+
+\subsection{Server Entry Point}
+
+\begin{lstlisting}[language=JavaScript, caption=server/index.ts - Main server configuration]
+import express from 'express';
+import session from 'express-session';
+import passport from 'passport';
+import { setupAuth } from './auth';
+import { registerRoutes } from './routes';
+import { setupVite, serveStatic } from './vite';
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'reel-forge-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: process.env.NODE_ENV === 'production' }
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Setup authentication
+setupAuth();
+
+// Parse JSON bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Register API routes
+registerRoutes(app);
+
+// Setup Vite dev server or static files
+if (process.env.NODE_ENV === 'development') {
+  await setupVite(app);
+} else {
+  serveStatic(app);
+}
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+\end{lstlisting}
+
+\subsection{Authentication Module}
+
+\begin{lstlisting}[language=JavaScript, caption=server/auth.ts - User registration and login]
+import passport from 'passport';
+import { Strategy as LocalStrategy } from 'passport-local';
+import bcrypt from 'bcrypt';
+import { db } from './db';
+import { users } from '../shared/schema';
+import { eq } from 'drizzle-orm';
+
+export function setupAuth() {
+  // Local strategy for username/password authentication
+  passport.use(new LocalStrategy(
+    async (username, password, done) => {
+      try {
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.username, username))
+          .limit(1);
+
+        if (!user) {
+          return done(null, false, { message: 'Invalid credentials' });
+        }
+
+        const validPassword = await bcrypt.compare(
+          password, 
+          user.password
+        );
+        
+        if (!validPassword) {
+          return done(null, false, { message: 'Invalid credentials' });
+        }
+
+        return done(null, user);
+      } catch (error) {
+        return done(error);
+      }
+    }
+  ));
+
+  // Serialize user to session
+  passport.serializeUser((user: any, done) => {
+    done(null, user.id);
+  });
+
+  // Deserialize user from session
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+      
+      done(null, user);
+    } catch (error) {
+      done(error);
+    }
+  });
+}
+
+// Registration function
+export async function registerUser(
+  username: string, 
+  email: string, 
+  password: string
+) {
+  const hashedPassword = await bcrypt.hash(password, 10);
+  
+  const [newUser] = await db
+    .insert(users)
+    .values({
+      username,
+      email,
+      password: hashedPassword,
+    })
+    .returning();
+  
+  return newUser;
+}
+\end{lstlisting}
+
+\subsection{Database Schema}
+
+\begin{lstlisting}[language=JavaScript, caption=shared/schema.ts - Database tables definition]
+import { pgTable, text, serial, integer, timestamp, 
+         boolean, jsonb } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  username: text('username').notNull().unique(),
+  email: text('email').notNull().unique(),
+  password: text('password').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const projects = pgTable('projects', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id),
+  title: text('title').notNull(),
+  description: text('description'),
+  videoPath: text('video_path'),
+  transcriptPath: text('transcript_path'),
+  status: text('status').notNull().default('pending'),
+  createdAt: timestamp('created_at').defaultNow(),
+  metadata: jsonb('metadata'),
+});
+
+export const reels = pgTable('reels', {
+  id: serial('id').primaryKey(),
+  projectId: integer('project_id').references(() => projects.id),
+  title: text('title').notNull(),
+  videoPath: text('video_path').notNull(),
+  startTime: integer('start_time').notNull(),
+  endTime: integer('end_time').notNull(),
+  transcript: text('transcript'),
+  engagementScore: integer('engagement_score'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const socialAccounts = pgTable('social_accounts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id),
+  platform: text('platform').notNull(),
+  accountId: text('account_id').notNull(),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token'),
+  expiresAt: timestamp('expires_at'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export const uploads = pgTable('uploads', {
+  id: serial('id').primaryKey(),
+  reelId: integer('reel_id').references(() => reels.id),
+  platform: text('platform').notNull(),
+  platformVideoId: text('platform_video_id'),
+  status: text('status').notNull().default('pending'),
+  uploadedAt: timestamp('uploaded_at'),
+  metadata: jsonb('metadata'),
+});
+\end{lstlisting}
+
+\subsection{Video Processing Service}
+
+\begin{lstlisting}[language=JavaScript, caption=server/services/videoProcessor.ts - Video processing implementation]
+import ffmpeg from 'fluent-ffmpeg';
+import path from 'path';
+import fs from 'fs/promises';
+
+interface ClipConfig {
+  startTime: number;
+  endTime: number;
+  outputPath: string;
+}
+
+export class VideoProcessor {
+  /**
+   * Extract audio from video file
+   */
+  async extractAudio(videoPath: string, outputPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .output(outputPath)
+        .audioCodec('libmp3lame')
+        .audioFrequency(16000)
+        .audioChannels(1)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .run();
+    });
+  }
+
+  /**
+   * Cut video clip from larger video
+   */
+  async cutClip(config: ClipConfig): Promise<void> {
+    const { startTime, endTime, inputPath, outputPath } = config;
+    const duration = endTime - startTime;
+
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .setStartTime(startTime)
+        .setDuration(duration)
+        .output(outputPath)
+        .videoCodec('libx264')
+        .audioCodec('aac')
+        .outputOptions([
+          '-preset fast',
+          '-crf 23',
+          '-movflags +faststart'
+        ])
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .run();
+    });
+  }
+
+  /**
+   * Get video metadata
+   */
+  async getMetadata(videoPath: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(videoPath, (err, metadata) => {
+        if (err) reject(err);
+        else resolve(metadata);
+      });
+    });
+  }
+
+  /**
+   * Generate video thumbnail
+   */
+  async generateThumbnail(
+    videoPath: string, 
+    outputPath: string, 
+    timestamp: string = '00:00:01'
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .screenshots({
+          timestamps: [timestamp],
+          filename: path.basename(outputPath),
+          folder: path.dirname(outputPath),
+        })
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err));
+    });
+  }
+}
+\end{lstlisting}
+
+\subsection{OAuth Integration}
+
+\begin{lstlisting}[language=JavaScript, caption=server/integrations/social/routes.ts - YouTube OAuth implementation]
+import { Router } from 'express';
+import { google } from 'googleapis';
+import { db } from '../../db';
+import { socialAccounts } from '../../../shared/schema';
+
+const router = Router();
+
+const oauth2Client = new google.auth.OAuth2(
+  process.env.YOUTUBE_CLIENT_ID,
+  process.env.YOUTUBE_CLIENT_SECRET,
+  `${process.env.BASE_URL}/api/social/youtube/callback`
+);
+
+// Initiate YouTube OAuth flow
+router.get('/youtube/auth', (req, res) => {
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: [
+      'https://www.googleapis.com/auth/youtube.upload',
+      'https://www.googleapis.com/auth/youtube.readonly',
+    ],
+    prompt: 'consent',
+  });
+  
+  res.redirect(authUrl);
+});
+
+// Handle OAuth callback
+router.get('/youtube/callback', async (req, res) => {
+  const { code } = req.query;
+  
+  try {
+    const { tokens } = await oauth2Client.getToken(code as string);
+    oauth2Client.setCredentials(tokens);
+    
+    // Get user's channel info
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+    const channelResponse = await youtube.channels.list({
+      part: ['snippet'],
+      mine: true,
+    });
+    
+    const channel = channelResponse.data.items?.[0];
+    
+    // Store tokens in database
+    await db.insert(socialAccounts).values({
+      userId: req.user.id,
+      platform: 'youtube',
+      accountId: channel.id,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresAt: new Date(tokens.expiry_date),
+      metadata: { channelName: channel.snippet.title },
+    });
+    
+    res.redirect('/dashboard?connected=youtube');
+  } catch (error) {
+    console.error('YouTube OAuth error:', error);
+    res.redirect('/dashboard?error=youtube_auth_failed');
+  }
+});
+
+export default router;
+\end{lstlisting}
+
+\section{Frontend Implementation}
+
+\subsection{React Component - Upload Panel}
+
+\begin{lstlisting}[language=JavaScript, caption=client/src/components/upload-panel.tsx - File upload component]
+import { useState } from 'react';
+import { Upload, FileVideo } from 'lucide-react';
+import { Button } from './ui/button';
+import { Progress } from './ui/progress';
+
+export function UploadPanel() {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+    
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('video', file);
+    
+    try {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const percentComplete = (e.loaded / e.total) * 100;
+          setProgress(percentComplete);
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          window.location.href = `/processing?project=${response.projectId}`;
+        }
+      });
+      
+      xhr.open('POST', '/api/projects/upload');
+      xhr.send(formData);
+    } catch (error) {
+      console.error('Upload failed:', error);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="border-2 border-dashed rounded-lg p-8">
+      <div className="text-center">
+        {!file ? (
+          <>
+            <FileVideo className="mx-auto h-12 w-12 text-muted-foreground" />
+            <div className="mt-4">
+              <label htmlFor="file-upload">
+                <Button variant="outline" asChild>
+                  <span>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Select Video
+                  </span>
+                </Button>
+                <input
+                  id="file-upload"
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+              </label>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="font-medium">{file.name}</p>
+            <p className="text-sm text-muted-foreground">
+              {(file.size / 1024 / 1024).toFixed(2)} MB
+            </p>
+            
+            {uploading && (
+              <div className="mt-4">
+                <Progress value={progress} />
+                <p className="text-sm mt-2">{Math.round(progress)}% uploaded</p>
+              </div>
+            )}
+            
+            <div className="mt-4 space-x-2">
+              <Button onClick={handleUpload} disabled={uploading}>
+                {uploading ? 'Uploading...' : 'Process Video'}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setFile(null)}
+                disabled={uploading}
+              >
+                Cancel
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+\end{lstlisting}
+
+\subsection{React Hook - Authentication}
+
+\begin{lstlisting}[language=JavaScript, caption=client/src/hooks/use-auth.ts - Authentication hook]
+import { useState, useEffect } from 'react';
+import { useLocation } from 'wouter';
+
+interface User {
+  id: number;
+  username: string;
+  email: string;
+}
+
+export function useAuth() {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/auth/me');
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = async (username: string, password: string) => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Login failed');
+    }
+
+    const userData = await response.json();
+    setUser(userData);
+    return userData;
+  };
+
+  const register = async (
+    username: string, 
+    email: string, 
+    password: string
+  ) => {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Registration failed');
+    }
+
+    const userData = await response.json();
+    setUser(userData);
+    return userData;
+  };
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setUser(null);
+    setLocation('/');
+  };
+
+  return { user, loading, login, register, logout };
+}
+\end{lstlisting}
+
+\subsection{Tailwind Configuration}
+
+\begin{lstlisting}[language=JavaScript, caption=tailwind.config.ts - Tailwind CSS configuration]
+import type { Config } from 'tailwindcss';
+
+export default {
+  darkMode: ['class'],
+  content: [
+    './client/index.html',
+    './client/src/**/*.{js,ts,jsx,tsx}',
+  ],
+  theme: {
+    extend: {
+      colors: {
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
+      },
+    },
+  },
+  plugins: [require('tailwindcss-animate')],
+} satisfies Config;
+\end{lstlisting}
+
+\section{Configuration Files}
+
+\subsection{TypeScript Configuration}
+
+\begin{lstlisting}[language=JSON, caption=tsconfig.json - TypeScript compiler options]
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./client/src/*"],
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": ["client/src", "shared"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
+\end{lstlisting}
+
+\subsection{Drizzle ORM Configuration}
+
+\begin{lstlisting}[language=JavaScript, caption=drizzle.config.ts - Database ORM configuration]
+import type { Config } from 'drizzle-kit';
+
+export default {
+  schema: './shared/schema.ts',
+  out: './drizzle',
+  driver: 'pg',
+  dbCredentials: {
+    connectionString: process.env.DATABASE_URL!,
+  },
+  verbose: true,
+  strict: true,
+} satisfies Config;
+\end{lstlisting}
+
+\section{Environment Configuration}
+
+\begin{lstlisting}[caption=.env.example - Environment variables template]
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+BASE_URL=http://localhost:3000
+SESSION_SECRET=your-session-secret-here
+
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/reelforge
+
+# OpenAI API
+OPENAI_API_KEY=your-openai-api-key
+
+# YouTube OAuth
+YOUTUBE_CLIENT_ID=your-youtube-client-id
+YOUTUBE_CLIENT_SECRET=your-youtube-client-secret
+
+# Facebook OAuth
+FACEBOOK_APP_ID=your-facebook-app-id
+FACEBOOK_APP_SECRET=your-facebook-app-secret
+
+# Instagram
+# (Uses Facebook credentials)
+
+# File Storage
+MAX_FILE_SIZE=500000000
+UPLOAD_DIR=./uploads
+OUTPUT_DIR=./outputs
+\end{lstlisting}
+
+\section{Package Dependencies}
+
+\begin{lstlisting}[language=JSON, caption=package.json - Key dependencies (excerpt)]
+{
+  "dependencies": {
+    "@ai-sdk/openai": "^0.0.66",
+    "bcrypt": "^5.1.1",
+    "drizzle-orm": "^0.36.4",
+    "express": "^4.21.1",
+    "express-session": "^1.18.1",
+    "fluent-ffmpeg": "^2.1.3",
+    "googleapis": "^144.0.0",
+    "passport": "^0.7.0",
+    "passport-local": "^1.0.0",
+    "pg": "^8.13.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "wouter": "^3.3.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "drizzle-kit": "^0.30.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.1"
+  }
+}
+\end{lstlisting}

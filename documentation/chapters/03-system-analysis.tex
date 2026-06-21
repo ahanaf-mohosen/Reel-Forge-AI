@@ -1,0 +1,333 @@
+\chapter{System Analysis and Requirements}
+
+\section{Introduction}
+
+This chapter presents a comprehensive analysis of system requirements, including functional and non-functional requirements, use case analysis, and feasibility studies. The analysis forms the foundation for system design and implementation decisions.
+
+\section{Requirement Analysis}
+
+\subsection{Functional Requirements}
+
+\subsubsection{User Management}
+
+\begin{enumerate}[label=FR1.\arabic*]
+    \item System shall provide user registration with email and password
+    \item System shall authenticate users with secure session management
+    \item System shall maintain user profiles with personal information
+    \item System shall support password reset functionality
+    \item System shall log user activities for security auditing
+\end{enumerate}
+
+\subsubsection{Video Processing}
+
+\begin{enumerate}[label=FR2.\arabic*]
+    \item System shall accept video uploads in common formats (MP4, MOV, AVI, WebM)
+    \item System shall validate video files for size, format, and duration constraints
+    \item System shall generate transcripts from video audio tracks
+    \item System shall analyze transcripts for engaging content segments
+    \item System shall automatically detect highlight moments based on AI analysis
+    \item System shall cut videos at specified time points
+    \item System shall generate preview thumbnails for video clips
+    \item System shall provide real-time progress updates during processing
+\end{enumerate}
+
+\subsubsection{Social Media Integration}
+
+\begin{enumerate}[label=FR3.\arabic*]
+    \item System shall implement OAuth 2.0 for YouTube authentication
+    \item System shall implement OAuth 2.0 for Facebook authentication
+    \item System shall support Instagram integration via Facebook Business accounts
+    \item System shall store and securely manage access tokens
+    \item System shall handle token expiration and refresh mechanisms
+    \item System shall upload videos to connected social media platforms
+    \item System shall support custom captions and metadata for uploads
+    \item System shall provide upload status feedback to users
+\end{enumerate}
+
+\subsubsection{Project Management}
+
+\begin{enumerate}[label=FR4.\arabic*]
+    \item System shall create projects for each video upload
+    \item System shall track project status (upload, processing, complete, failed)
+    \item System shall store generated clips within projects
+    \item System shall allow users to view and download processed clips
+    \item System shall maintain a library of all user projects
+    \item System shall support project deletion with cascading cleanup
+    \item System shall enable batch processing of multiple videos
+\end{enumerate}
+
+\subsubsection{User Interface}
+
+\begin{enumerate}[label=FR5.\arabic*]
+    \item System shall provide intuitive dashboard with project overview
+    \item System shall display social media connection status
+    \item System shall offer drag-and-drop video upload interface
+    \item System shall show processing progress with visual indicators
+    \item System shall enable one-click social media distribution
+    \item System shall provide responsive design for mobile and desktop
+    \item System shall implement dark/light theme switching
+\end{enumerate}
+
+\subsection{Non-Functional Requirements}
+
+\subsubsection{Performance}
+
+\begin{enumerate}[label=NFR1.\arabic*]
+    \item System shall process videos with latency proportional to video length
+    \item System shall handle concurrent uploads from multiple users
+    \item System shall support video files up to 2GB in size
+    \item System shall maintain response times under 200ms for API calls
+    \item System shall optimize database queries for sub-second retrieval
+\end{enumerate}
+
+\subsubsection{Security}
+
+\begin{enumerate}[label=NFR2.\arabic*]
+    \item System shall encrypt all data transmissions using TLS 1.3
+    \item System shall hash user passwords using industry-standard algorithms
+    \item System shall implement CSRF protection for all state-changing operations
+    \item System shall sanitize user inputs to prevent injection attacks
+    \item System shall implement rate limiting to prevent abuse
+    \item System shall securely store OAuth tokens with encryption
+\end{enumerate}
+
+\subsubsection{Reliability}
+
+\begin{enumerate}[label=NFR3.\arabic*]
+    \item System shall maintain 99.5\% uptime during business hours
+    \item System shall implement graceful error handling with user feedback
+    \item System shall provide transaction rollback for failed operations
+    \item System shall maintain data integrity through database constraints
+    \item System shall log errors for debugging and monitoring
+\end{enumerate}
+
+\subsubsection{Scalability}
+
+\begin{enumerate}[label=NFR4.\arabic*]
+    \item System architecture shall support horizontal scaling
+    \item System shall use connection pooling for database efficiency
+    \item System shall enable queue-based processing for heavy workloads
+    \item System shall support CDN integration for media delivery
+\end{enumerate}
+
+\subsubsection{Maintainability}
+
+\begin{enumerate}[label=NFR5.\arabic*]
+    \item System code shall follow TypeScript best practices
+    \item System shall maintain modular architecture with clear separation
+    \item System shall include comprehensive inline documentation
+    \item System shall implement consistent error handling patterns
+    \item System shall use version control for all code changes
+\end{enumerate}
+
+\subsubsection{Usability}
+
+\begin{enumerate}[label=NFR6.\arabic*]
+    \item System interface shall be intuitive for non-technical users
+    \item System shall provide clear feedback for all user actions
+    \item System shall implement accessibility standards (WCAG 2.1)
+    \item System shall maintain consistent UI/UX across all pages
+    \item System shall provide helpful error messages and recovery suggestions
+\end{enumerate}
+
+\section{Use Case Analysis}
+
+\subsection{Primary Actors}
+
+\begin{enumerate}
+    \item \textbf{Content Creator:} Primary user who uploads videos and distributes content
+    \item \textbf{System:} Automated processing and integration components
+    \item \textbf{Social Media Platform:} External services (YouTube, Facebook, Instagram)
+\end{enumerate}
+
+\subsection{Use Case Diagrams}
+
+\subsubsection{Use Case 1: User Registration and Authentication}
+
+\begin{description}
+    \item[Actor:] Content Creator
+    \item[Precondition:] User has internet access and valid email
+    \item[Main Flow:] 
+    \begin{enumerate}
+        \item User navigates to registration page
+        \item User enters email, password, and profile information
+        \item System validates input data
+        \item System creates user account with hashed password
+        \item System sends confirmation email
+        \item User logs in with credentials
+        \item System creates authenticated session
+    \end{enumerate}
+    \item[Postcondition:] User is authenticated and can access platform features
+    \item[Alternative Flow:] Registration fails due to duplicate email or invalid input
+\end{description}
+
+\subsubsection{Use Case 2: Connect Social Media Account}
+
+\begin{description}
+    \item[Actor:] Content Creator
+    \item[Precondition:] User is authenticated
+    \item[Main Flow:] 
+    \begin{enumerate}
+        \item User navigates to Settings page
+        \item User clicks "Connect" for desired platform (YouTube/Facebook)
+        \item System redirects to platform OAuth authorization page
+        \item User grants permissions to Reel Forge AI
+        \item Platform redirects back with authorization code
+        \item System exchanges code for access token
+        \item System stores encrypted token in database
+        \item System confirms successful connection
+    \end{enumerate}
+    \item[Postcondition:] Social media account is connected and ready for uploads
+    \item[Alternative Flow:] User denies permissions or OAuth flow fails
+\end{description}
+
+\subsubsection{Use Case 3: Upload and Process Video}
+
+\begin{description}
+    \item[Actor:] Content Creator, System
+    \item[Precondition:] User is authenticated, has video file ready
+    \item[Main Flow:] 
+    \begin{enumerate}
+        \item User navigates to Create page
+        \item User uploads video file via drag-and-drop or file selection
+        \item System validates file format and size
+        \item System creates project record in database
+        \item System saves video file to storage
+        \item System generates transcript from audio
+        \item System analyzes transcript for highlights
+        \item System identifies top engaging moments
+        \item System cuts video at highlight timestamps
+        \item System generates thumbnails for clips
+        \item System updates project status to "complete"
+        \item User receives notification of completion
+    \end{enumerate}
+    \item[Postcondition:] Video is processed with clips ready for distribution
+    \item[Alternative Flow:] Processing fails due to unsupported format or system error
+\end{description}
+
+\subsubsection{Use Case 4: Distribute Content to Social Media}
+
+\begin{description}
+    \item[Actor:] Content Creator, System, Social Media Platform
+    \item[Precondition:] Video clips are processed, platform is connected
+    \item[Main Flow:] 
+    \begin{enumerate}
+        \item User navigates to Library page
+        \item User views processed video clips
+        \item User clicks social media platform icon (YouTube/Facebook/Instagram)
+        \item System retrieves stored access token
+        \item System prepares video file and metadata
+        \item System calls platform API to upload video
+        \item Platform confirms successful upload
+        \item System displays success notification with video URL
+    \end{enumerate}
+    \item[Postcondition:] Video is published on selected platform
+    \item[Alternative Flow:] Upload fails due to expired token, API quota, or network error
+\end{description}
+
+\section{Feasibility Study}
+
+\subsection{Technical Feasibility}
+
+\begin{description}
+    \item[Video Processing:] FFmpeg provides robust, battle-tested video manipulation capabilities. Implementation is technically feasible with existing libraries.
+    
+    \item[AI Integration:] Cloud-based speech-to-text APIs (OpenAI, Google, AWS) offer high-accuracy transcript generation. Feasible within development timeframe.
+    
+    \item[Social Media APIs:] YouTube Data API, Facebook Graph API, and Instagram Business API provide necessary endpoints. OAuth implementation is well-documented and feasible.
+    
+    \item[Full-Stack Development:] Node.js, React, and PostgreSQL are mature technologies with extensive community support. Development is technically feasible.
+    
+    \item[Assessment:] \textbf{Highly Feasible} - All required technologies are available, documented, and proven.
+\end{description}
+
+\subsection{Economic Feasibility}
+
+\begin{description}
+    \item[Development Costs:] 
+    \begin{itemize}
+        \item Developer time: In-house development project
+        \item Software licenses: Open-source technologies (zero cost)
+        \item Third-party APIs: Free tiers available for development
+    \end{itemize}
+    
+    \item[Operational Costs:]
+    \begin{itemize}
+        \item Cloud hosting: \$50-100/month for initial deployment
+        \item Database: PostgreSQL included in hosting
+        \item Storage: \$10-30/month for video file storage
+        \item API costs: Pay-as-you-go pricing within budget
+    \end{itemize}
+    
+    \item[Return on Investment:] Platform reduces content creation time by 80\%, providing significant value to users. Potential for subscription revenue model.
+    
+    \item[Assessment:] \textbf{Economically Viable} - Low initial investment with clear value proposition.
+\end{description}
+
+\subsection{Operational Feasibility}
+
+\begin{description}
+    \item[User Adoption:] Target audience (content creators) actively seeks automation solutions. User-friendly interface reduces training requirements.
+    
+    \item[Maintenance:] Modular architecture enables easy updates. TypeScript provides type safety for long-term maintainability.
+    
+    \item[Scalability:] Cloud infrastructure allows gradual scaling based on user growth.
+    
+    \item[Assessment:] \textbf{Operationally Sound} - Platform aligns with user needs and maintenance capabilities.
+\end{description}
+
+\subsection{Schedule Feasibility}
+
+\begin{table}[H]
+\centering
+\caption{Project Timeline}
+\begin{tabular}{@{}llr@{}}
+\toprule
+\textbf{Phase} & \textbf{Activities} & \textbf{Duration} \\
+\midrule
+Planning & Requirements, design, architecture & 2 weeks \\
+Development & Backend implementation & 4 weeks \\
+ & Frontend implementation & 3 weeks \\
+ & Integration & 2 weeks \\
+Testing & Unit, integration, UAT & 2 weeks \\
+Deployment & Cloud setup, deployment & 1 week \\
+Documentation & Technical docs, user guides & 1 week \\
+\midrule
+\textbf{Total} & & \textbf{15 weeks} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Assessment:} \textbf{Achievable} - Timeline accommodates development, testing, and iteration within academic semester constraints.
+
+\section{System Constraints}
+
+\subsection{Platform Constraints}
+
+\begin{enumerate}
+    \item \textbf{API Rate Limits:} YouTube limits daily API quota; requires careful request management
+    \item \textbf{File Size Limits:} Social platforms impose maximum file sizes (varies by platform)
+    \item \textbf{Format Requirements:} Different platforms require specific video formats and resolutions
+    \item \textbf{OAuth Restrictions:} Platforms require app review for production deployment
+\end{enumerate}
+
+\subsection{Technical Constraints}
+
+\begin{enumerate}
+    \item \textbf{Processing Power:} Video processing is CPU-intensive; requires adequate server resources
+    \item \textbf{Storage:} Large video files require substantial storage capacity
+    \item \textbf{Network Bandwidth:} Video uploads/downloads consume significant bandwidth
+    \item \textbf{Browser Compatibility:} Modern features require current browser versions
+\end{enumerate}
+
+\subsection{Business Constraints}
+
+\begin{enumerate}
+    \item \textbf{Development Time:} Academic semester provides limited development window
+    \item \textbf{Budget:} Project operates on limited budget for hosting and APIs
+    \item \textbf{Compliance:} Must adhere to platform terms of service and data protection regulations
+\end{enumerate}
+
+\section{Summary}
+
+This chapter has established comprehensive functional and non-functional requirements for Reel Forge AI. Use case analysis demonstrates clear user workflows and system interactions. Feasibility studies confirm the project's technical viability, economic soundness, operational practicality, and schedule achievability. Identified constraints inform design decisions and risk mitigation strategies presented in subsequent chapters.

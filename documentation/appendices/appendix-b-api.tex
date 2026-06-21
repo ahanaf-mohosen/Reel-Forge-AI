@@ -1,0 +1,600 @@
+\chapter{API Documentation}
+\label{appendix:api}
+
+This appendix provides comprehensive documentation of all REST API endpoints available in Reel Forge AI.
+
+\section{Base URL}
+
+\begin{verbatim}
+Development: http://localhost:3000/api
+Production: https://your-domain.com/api
+\end{verbatim}
+
+\section{Authentication}
+
+All authenticated endpoints require a valid session cookie. Obtain session by logging in via \texttt{/api/auth/login}.
+
+\subsection{Session-Based Authentication}
+
+The API uses cookie-based sessions. After successful login, all subsequent requests automatically include session credentials.
+
+\section{Authentication Endpoints}
+
+\subsection{POST /api/auth/register}
+
+Register a new user account.
+
+\textbf{Request Body:}
+\begin{lstlisting}[language=JSON]
+{
+  "username": "string (required, unique)",
+  "email": "string (required, unique, valid email)",
+  "password": "string (required, min 8 characters)"
+}
+\end{lstlisting}
+
+\textbf{Success Response (201):}
+\begin{lstlisting}[language=JSON]
+{
+  "id": 1,
+  "username": "john_doe",
+  "email": "john@example.com",
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+\end{lstlisting}
+
+\textbf{Error Responses:}
+\begin{itemize}
+    \item \texttt{400}: Invalid input data
+    \item \texttt{409}: Username or email already exists
+\end{itemize}
+
+\subsection{POST /api/auth/login}
+
+Authenticate user and create session.
+
+\textbf{Request Body:}
+\begin{lstlisting}[language=JSON]
+{
+  "username": "string (required)",
+  "password": "string (required)"
+}
+\end{lstlisting}
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "id": 1,
+  "username": "john_doe",
+  "email": "john@example.com"
+}
+\end{lstlisting}
+
+\textbf{Error Responses:}
+\begin{itemize}
+    \item \texttt{401}: Invalid credentials
+\end{itemize}
+
+\subsection{POST /api/auth/logout}
+
+Destroy current session.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "message": "Logged out successfully"
+}
+\end{lstlisting}
+
+\subsection{GET /api/auth/me}
+
+Get current authenticated user information.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "id": 1,
+  "username": "john_doe",
+  "email": "john@example.com"
+}
+\end{lstlisting}
+
+\textbf{Error Responses:}
+\begin{itemize}
+    \item \texttt{401}: Not authenticated
+\end{itemize}
+
+\section{Project Endpoints}
+
+\subsection{POST /api/projects/upload}
+
+Upload video file and create new project.
+
+\textbf{Request:}
+\begin{itemize}
+    \item Content-Type: multipart/form-data
+    \item Field: \texttt{video} (video file, max 500MB)
+\end{itemize}
+
+\textbf{Success Response (201):}
+\begin{lstlisting}[language=JSON]
+{
+  "projectId": 42,
+  "title": "My Video",
+  "status": "processing",
+  "videoPath": "/uploads/user-1/video-abc123.mp4"
+}
+\end{lstlisting}
+
+\textbf{Error Responses:}
+\begin{itemize}
+    \item \texttt{400}: No file uploaded or invalid file type
+    \item \texttt{413}: File too large
+    \item \texttt{401}: Not authenticated
+\end{itemize}
+
+\subsection{GET /api/projects}
+
+List all projects for authenticated user.
+
+\textbf{Query Parameters:}
+\begin{itemize}
+    \item \texttt{page}: Page number (default: 1)
+    \item \texttt{limit}: Results per page (default: 10, max: 50)
+    \item \texttt{status}: Filter by status (pending|processing|completed|failed)
+\end{itemize}
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "projects": [
+    {
+      "id": 42,
+      "title": "My Video",
+      "description": "Project description",
+      "status": "completed",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "reelsCount": 5
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 23,
+    "pages": 3
+  }
+}
+\end{lstlisting}
+
+\subsection{GET /api/projects/:id}
+
+Get detailed information about specific project.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "id": 42,
+  "title": "My Video",
+  "description": "Project description",
+  "status": "completed",
+  "videoPath": "/uploads/user-1/video-abc123.mp4",
+  "transcriptPath": "/uploads/user-1/transcript-abc123.json",
+  "createdAt": "2024-01-15T10:30:00.000Z",
+  "metadata": {
+    "duration": 1800,
+    "resolution": "1920x1080",
+    "fps": 30
+  },
+  "reels": [
+    {
+      "id": 101,
+      "title": "Highlight 1",
+      "startTime": 120,
+      "endTime": 150,
+      "engagementScore": 85
+    }
+  ]
+}
+\end{lstlisting}
+
+\textbf{Error Responses:}
+\begin{itemize}
+    \item \texttt{404}: Project not found
+    \item \texttt{403}: Not authorized to access this project
+\end{itemize}
+
+\subsection{DELETE /api/projects/:id}
+
+Delete project and associated reels.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "message": "Project deleted successfully"
+}
+\end{lstlisting}
+
+\textbf{Error Responses:}
+\begin{itemize}
+    \item \texttt{404}: Project not found
+    \item \texttt{403}: Not authorized to delete this project
+\end{itemize}
+
+\section{Reels Endpoints}
+
+\subsection{GET /api/reels}
+
+List all reels for authenticated user.
+
+\textbf{Query Parameters:}
+\begin{itemize}
+    \item \texttt{projectId}: Filter by project ID
+    \item \texttt{page}: Page number
+    \item \texttt{limit}: Results per page
+\end{itemize}
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "reels": [
+    {
+      "id": 101,
+      "projectId": 42,
+      "title": "Highlight 1",
+      "videoPath": "/outputs/reel-xyz789.mp4",
+      "startTime": 120,
+      "endTime": 150,
+      "duration": 30,
+      "transcript": "This is the highlight transcript...",
+      "engagementScore": 85,
+      "createdAt": "2024-01-15T11:00:00.000Z"
+    }
+  ]
+}
+\end{lstlisting}
+
+\subsection{GET /api/reels/:id}
+
+Get specific reel details.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "id": 101,
+  "projectId": 42,
+  "title": "Highlight 1",
+  "videoPath": "/outputs/reel-xyz789.mp4",
+  "startTime": 120,
+  "endTime": 150,
+  "duration": 30,
+  "transcript": "Full transcript text...",
+  "engagementScore": 85,
+  "createdAt": "2024-01-15T11:00:00.000Z",
+  "uploads": [
+    {
+      "platform": "youtube",
+      "status": "completed",
+      "platformVideoId": "dQw4w9WgXcQ",
+      "uploadedAt": "2024-01-15T12:00:00.000Z"
+    }
+  ]
+}
+\end{lstlisting}
+
+\subsection{PATCH /api/reels/:id}
+
+Update reel information.
+
+\textbf{Request Body:}
+\begin{lstlisting}[language=JSON]
+{
+  "title": "Updated Title (optional)",
+  "startTime": 125 (optional),
+  "endTime": 155 (optional)
+}
+\end{lstlisting}
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "id": 101,
+  "title": "Updated Title",
+  "startTime": 125,
+  "endTime": 155
+}
+\end{lstlisting}
+
+\subsection{DELETE /api/reels/:id}
+
+Delete specific reel.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "message": "Reel deleted successfully"
+}
+\end{lstlisting}
+
+\section{Social Media Integration Endpoints}
+
+\subsection{GET /api/social/accounts}
+
+List connected social media accounts.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "accounts": [
+    {
+      "id": 1,
+      "platform": "youtube",
+      "accountId": "UCxxxxx",
+      "metadata": {
+        "channelName": "My Channel"
+      },
+      "connectedAt": "2024-01-10T09:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "platform": "facebook",
+      "accountId": "12345678",
+      "metadata": {
+        "name": "John Doe",
+        "pages": [
+          {
+            "id": "987654321",
+            "name": "My Page"
+          }
+        ]
+      },
+      "connectedAt": "2024-01-12T14:30:00.000Z"
+    }
+  ]
+}
+\end{lstlisting}
+
+\subsection{GET /api/social/youtube/auth}
+
+Initiate YouTube OAuth flow (redirects to Google).
+
+\textbf{Response:}
+\begin{itemize}
+    \item Redirects to Google OAuth consent screen
+\end{itemize}
+
+\subsection{GET /api/social/youtube/callback}
+
+Handle YouTube OAuth callback (internal use, called by Google).
+
+\subsection{GET /api/social/facebook/auth}
+
+Initiate Facebook OAuth flow (redirects to Facebook).
+
+\textbf{Response:}
+\begin{itemize}
+    \item Redirects to Facebook OAuth consent screen
+\end{itemize}
+
+\subsection{GET /api/social/facebook/callback}
+
+Handle Facebook OAuth callback (internal use, called by Facebook).
+
+\subsection{DELETE /api/social/accounts/:id}
+
+Disconnect social media account.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "message": "Account disconnected successfully"
+}
+\end{lstlisting}
+
+\section{Upload Endpoints}
+
+\subsection{POST /api/uploads/youtube}
+
+Upload reel to YouTube.
+
+\textbf{Request Body:}
+\begin{lstlisting}[language=JSON]
+{
+  "reelId": 101,
+  "title": "My Amazing Video",
+  "description": "Check out this highlight!",
+  "tags": ["highlights", "ai", "shorts"],
+  "privacyStatus": "public"
+}
+\end{lstlisting}
+
+\textbf{Success Response (201):}
+\begin{lstlisting}[language=JSON]
+{
+  "uploadId": 501,
+  "platform": "youtube",
+  "platformVideoId": "dQw4w9WgXcQ",
+  "status": "completed",
+  "url": "https://youtube.com/shorts/dQw4w9WgXcQ"
+}
+\end{lstlisting}
+
+\textbf{Error Responses:}
+\begin{itemize}
+    \item \texttt{400}: Invalid request body
+    \item \texttt{404}: Reel not found
+    \item \texttt{403}: YouTube account not connected
+    \item \texttt{500}: Upload failed
+\end{itemize}
+
+\subsection{POST /api/uploads/facebook}
+
+Upload reel to Facebook page.
+
+\textbf{Request Body:}
+\begin{lstlisting}[language=JSON]
+{
+  "reelId": 101,
+  "pageId": "987654321",
+  "description": "Check out this highlight!",
+  "published": true
+}
+\end{lstlisting}
+
+\textbf{Success Response (201):}
+\begin{lstlisting}[language=JSON]
+{
+  "uploadId": 502,
+  "platform": "facebook",
+  "platformVideoId": "123456789_987654321",
+  "status": "completed",
+  "url": "https://facebook.com/..."
+}
+\end{lstlisting}
+
+\subsection{POST /api/uploads/instagram}
+
+Upload reel to Instagram.
+
+\textbf{Request Body:}
+\begin{lstlisting}[language=JSON]
+{
+  "reelId": 101,
+  "caption": "Check out this highlight! #ai #shorts",
+  "locationId": "123456" (optional)
+}
+\end{lstlisting}
+
+\textbf{Success Response (201):}
+\begin{lstlisting}[language=JSON]
+{
+  "uploadId": 503,
+  "platform": "instagram",
+  "platformVideoId": "abc123xyz",
+  "status": "completed",
+  "url": "https://instagram.com/p/abc123xyz"
+}
+\end{lstlisting}
+
+\subsection{GET /api/uploads/:id/status}
+
+Check upload status.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "id": 501,
+  "status": "processing",
+  "progress": 75,
+  "message": "Uploading video..."
+}
+\end{lstlisting}
+
+\textbf{Status Values:}
+\begin{itemize}
+    \item \texttt{pending}: Queued for upload
+    \item \texttt{processing}: Currently uploading
+    \item \texttt{completed}: Upload successful
+    \item \texttt{failed}: Upload failed
+\end{itemize}
+
+\section{Processing Status Endpoints}
+
+\subsection{GET /api/processing/:projectId/status}
+
+Get real-time processing status for project.
+
+\textbf{Success Response (200):}
+\begin{lstlisting}[language=JSON]
+{
+  "projectId": 42,
+  "status": "processing",
+  "currentStep": "generating_highlights",
+  "progress": 60,
+  "steps": {
+    "upload": "completed",
+    "audio_extraction": "completed",
+    "transcription": "completed",
+    "highlight_detection": "in_progress",
+    "clip_generation": "pending"
+  },
+  "estimatedTimeRemaining": 120
+}
+\end{lstlisting}
+
+\section{Error Codes}
+
+\subsection{Standard HTTP Status Codes}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Code} & \textbf{Meaning} \\
+\hline
+200 & OK - Request successful \\
+201 & Created - Resource created successfully \\
+400 & Bad Request - Invalid input data \\
+401 & Unauthorized - Authentication required \\
+403 & Forbidden - Insufficient permissions \\
+404 & Not Found - Resource not found \\
+409 & Conflict - Resource already exists \\
+413 & Payload Too Large - File too large \\
+500 & Internal Server Error - Server error \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Error Response Format}
+
+All errors follow consistent format:
+
+\begin{lstlisting}[language=JSON]
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message",
+    "details": {
+      "field": "Additional context"
+    }
+  }
+}
+\end{lstlisting}
+
+\section{Rate Limiting}
+
+\begin{itemize}
+    \item Upload endpoints: 10 requests per hour per user
+    \item Social API endpoints: 50 requests per hour per user
+    \item Other endpoints: 1000 requests per hour per user
+\end{itemize}
+
+Rate limit headers included in responses:
+\begin{verbatim}
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 847
+X-RateLimit-Reset: 1642176000
+\end{verbatim}
+
+\section{Pagination}
+
+List endpoints support pagination via query parameters:
+
+\begin{itemize}
+    \item \texttt{page}: Page number (1-indexed)
+    \item \texttt{limit}: Items per page (max 50)
+\end{itemize}
+
+Pagination metadata included in response:
+\begin{lstlisting}[language=JSON]
+{
+  "data": [...],
+  "pagination": {
+    "page": 2,
+    "limit": 10,
+    "total": 47,
+    "pages": 5,
+    "hasNext": true,
+    "hasPrev": true
+  }
+}
+\end{lstlisting}

@@ -1,0 +1,663 @@
+\chapter{Deployment Guide}
+\label{appendix:deployment}
+
+This appendix provides comprehensive instructions for deploying Reel Forge AI to production environments.
+
+\section{System Requirements}
+
+\subsection{Hardware Requirements}
+
+\textbf{Minimum:}
+\begin{itemize}
+    \item CPU: 2 cores
+    \item RAM: 4GB
+    \item Storage: 50GB SSD
+    \item Network: 100 Mbps
+\end{itemize}
+
+\textbf{Recommended:}
+\begin{itemize}
+    \item CPU: 4+ cores
+    \item RAM: 8GB+
+    \item Storage: 200GB+ SSD
+    \item Network: 1 Gbps
+\end{itemize}
+
+\subsection{Software Requirements}
+
+\begin{itemize}
+    \item Node.js 18.x or higher
+    \item PostgreSQL 14.x or higher
+    \item FFmpeg 4.4 or higher
+    \item Nginx (for reverse proxy)
+    \item PM2 (process manager)
+    \item Git
+\end{itemize}
+
+\subsection{External Dependencies}
+
+\begin{itemize}
+    \item OpenAI API account and API key
+    \item YouTube Data API v3 credentials (OAuth 2.0)
+    \item Facebook App credentials
+    \item Domain name with SSL certificate
+\end{itemize}
+
+\section{Pre-Deployment Setup}
+
+\subsection{Server Preparation}
+
+\subsubsection{Update System}
+
+\begin{lstlisting}[language=bash]
+# Ubuntu/Debian
+sudo apt update && sudo apt upgrade -y
+
+# Install essential tools
+sudo apt install -y git curl wget build-essential
+\end{lstlisting}
+
+\subsubsection{Install Node.js}
+
+\begin{lstlisting}[language=bash]
+# Install Node.js 18.x via NodeSource
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Verify installation
+node --version
+npm --version
+\end{lstlisting}
+
+\subsubsection{Install PostgreSQL}
+
+\begin{lstlisting}[language=bash]
+# Install PostgreSQL 14
+sudo apt install -y postgresql postgresql-contrib
+
+# Start and enable PostgreSQL
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Create database
+sudo -u postgres psql
+postgres=# CREATE DATABASE reelforge;
+postgres=# CREATE USER reelforge_user WITH PASSWORD 'secure_password';
+postgres=# GRANT ALL PRIVILEGES ON DATABASE reelforge TO reelforge_user;
+postgres=# \q
+\end{lstlisting}
+
+\subsubsection{Install FFmpeg}
+
+\begin{lstlisting}[language=bash]
+# Install FFmpeg
+sudo apt install -y ffmpeg
+
+# Verify installation
+ffmpeg -version
+\end{lstlisting}
+
+\subsubsection{Install Nginx}
+
+\begin{lstlisting}[language=bash]
+# Install Nginx
+sudo apt install -y nginx
+
+# Start and enable Nginx
+sudo systemctl start nginx
+sudo systemctl enable nginx
+\end{lstlisting}
+
+\subsubsection{Install PM2}
+
+\begin{lstlisting}[language=bash]
+# Install PM2 globally
+sudo npm install -g pm2
+
+# Setup PM2 startup script
+pm2 startup systemd
+\end{lstlisting}
+
+\section{Application Deployment}
+
+\subsection{Clone Repository}
+
+\begin{lstlisting}[language=bash]
+# Create application directory
+sudo mkdir -p /var/www/reelforge
+sudo chown $USER:$USER /var/www/reelforge
+
+# Clone repository
+cd /var/www/reelforge
+git clone https://github.com/yourusername/reel-forge-ai.git .
+
+# Checkout production branch (if applicable)
+git checkout production
+\end{lstlisting}
+
+\subsection{Install Dependencies}
+
+\begin{lstlisting}[language=bash]
+# Install Node.js dependencies
+npm install --production
+
+# Build application
+npm run build
+\end{lstlisting}
+
+\subsection{Environment Configuration}
+
+\begin{lstlisting}[language=bash]
+# Create .env file
+nano .env
+\end{lstlisting}
+
+\textbf{Production Environment Variables:}
+
+\begin{lstlisting}[caption=.env - Production configuration]
+# Server Configuration
+NODE_ENV=production
+PORT=3000
+BASE_URL=https://yourdomain.com
+
+# Session Secret (generate random string)
+SESSION_SECRET=<generate-secure-random-string-here>
+
+# Database
+DATABASE_URL=postgresql://reelforge_user:secure_password@localhost:5432/reelforge
+
+# OpenAI API
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxx
+
+# YouTube OAuth
+YOUTUBE_CLIENT_ID=xxxxxxxxx.apps.googleusercontent.com
+YOUTUBE_CLIENT_SECRET=xxxxxxxxxxxxxxxxx
+
+# Facebook OAuth
+FACEBOOK_APP_ID=xxxxxxxxxxxxxxxxx
+FACEBOOK_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxx
+
+# File Storage
+MAX_FILE_SIZE=500000000
+UPLOAD_DIR=/var/www/reelforge/uploads
+OUTPUT_DIR=/var/www/reelforge/outputs
+
+# Logging
+LOG_LEVEL=info
+LOG_FILE=/var/log/reelforge/app.log
+\end{lstlisting}
+
+\textbf{Generate Secure Session Secret:}
+
+\begin{lstlisting}[language=bash]
+# Generate random session secret
+openssl rand -base64 32
+\end{lstlisting}
+
+\subsection{Database Migration}
+
+\begin{lstlisting}[language=bash]
+# Run database migrations
+npm run db:push
+
+# Or manually run migrations
+psql -U reelforge_user -d reelforge -f drizzle/migrations/0001_initial_schema.sql
+\end{lstlisting}
+
+\subsection{Create Required Directories}
+
+\begin{lstlisting}[language=bash]
+# Create upload and output directories
+mkdir -p /var/www/reelforge/uploads
+mkdir -p /var/www/reelforge/outputs
+
+# Set proper permissions
+chmod 755 /var/www/reelforge/uploads
+chmod 755 /var/www/reelforge/outputs
+
+# Create log directory
+sudo mkdir -p /var/log/reelforge
+sudo chown $USER:$USER /var/log/reelforge
+\end{lstlisting}
+
+\section{Process Management}
+
+\subsection{PM2 Configuration}
+
+Create PM2 ecosystem configuration:
+
+\begin{lstlisting}[language=JavaScript, caption=ecosystem.config.js]
+module.exports = {
+  apps: [{
+    name: 'reelforge',
+    script: './server/index.ts',
+    interpreter: 'node',
+    interpreter_args: '--loader ts-node/esm',
+    instances: 'max',
+    exec_mode: 'cluster',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    },
+    error_file: '/var/log/reelforge/error.log',
+    out_file: '/var/log/reelforge/out.log',
+    log_date_format: 'YYYY-MM-DD HH:mm:ss',
+    merge_logs: true,
+    max_memory_restart: '1G',
+    watch: false,
+    ignore_watch: ['node_modules', 'uploads', 'outputs'],
+    autorestart: true,
+    max_restarts: 10,
+    restart_delay: 4000
+  }]
+};
+\end{lstlisting}
+
+\subsection{Start Application}
+
+\begin{lstlisting}[language=bash]
+# Start application with PM2
+pm2 start ecosystem.config.js
+
+# Save PM2 process list
+pm2 save
+
+# Check application status
+pm2 status
+
+# View logs
+pm2 logs reelforge
+
+# Monitor application
+pm2 monit
+\end{lstlisting}
+
+\section{Nginx Configuration}
+
+\subsection{SSL Certificate Setup}
+
+Install Certbot for Let's Encrypt SSL:
+
+\begin{lstlisting}[language=bash]
+# Install Certbot
+sudo apt install -y certbot python3-certbot-nginx
+
+# Obtain SSL certificate
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+
+# Test auto-renewal
+sudo certbot renew --dry-run
+\end{lstlisting}
+
+\subsection{Nginx Virtual Host}
+
+Create Nginx configuration:
+
+\begin{lstlisting}[caption=/etc/nginx/sites-available/reelforge]
+server {
+    listen 80;
+    server_name yourdomain.com www.yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com www.yourdomain.com;
+
+    # SSL Configuration
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Security Headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Client body size (for video uploads)
+    client_max_body_size 500M;
+    client_body_timeout 300s;
+
+    # Proxy settings
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        
+        # Timeouts for long uploads
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # Static files caching
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
+        proxy_pass http://localhost:3000;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Uploads and outputs directory
+    location /uploads/ {
+        alias /var/www/reelforge/uploads/;
+        expires 1d;
+    }
+
+    location /outputs/ {
+        alias /var/www/reelforge/outputs/;
+        expires 1d;
+    }
+
+    # Access and error logs
+    access_log /var/log/nginx/reelforge_access.log;
+    error_log /var/log/nginx/reelforge_error.log;
+}
+\end{lstlisting}
+
+\subsection{Enable and Restart Nginx}
+
+\begin{lstlisting}[language=bash]
+# Enable site
+sudo ln -s /etc/nginx/sites-available/reelforge /etc/nginx/sites-enabled/
+
+# Test Nginx configuration
+sudo nginx -t
+
+# Restart Nginx
+sudo systemctl restart nginx
+\end{lstlisting}
+
+\section{Firewall Configuration}
+
+\subsection{UFW Setup}
+
+\begin{lstlisting}[language=bash]
+# Enable UFW
+sudo ufw enable
+
+# Allow SSH
+sudo ufw allow 22/tcp
+
+# Allow HTTP and HTTPS
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# Check status
+sudo ufw status
+\end{lstlisting}
+
+\section{Monitoring and Logging}
+
+\subsection{Log Rotation}
+
+Configure logrotate for application logs:
+
+\begin{lstlisting}[caption=/etc/logrotate.d/reelforge]
+/var/log/reelforge/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 reelforge reelforge
+    sharedscripts
+    postrotate
+        pm2 reloadLogs
+    endscript
+}
+\end{lstlisting}
+
+\subsection{Monitoring Setup}
+
+\begin{lstlisting}[language=bash]
+# Install monitoring tools
+sudo npm install -g pm2-logrotate
+
+# Configure PM2 monitoring
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 7
+pm2 set pm2-logrotate:compress true
+\end{lstlisting}
+
+\section{Backup Strategy}
+
+\subsection{Database Backup}
+
+Create automated backup script:
+
+\begin{lstlisting}[language=bash, caption=/usr/local/bin/backup-reelforge.sh]
+#!/bin/bash
+
+BACKUP_DIR="/var/backups/reelforge"
+DATE=$(date +%Y%m%d_%H%M%S)
+DB_NAME="reelforge"
+DB_USER="reelforge_user"
+
+# Create backup directory
+mkdir -p $BACKUP_DIR
+
+# Backup database
+pg_dump -U $DB_USER $DB_NAME | gzip > $BACKUP_DIR/db_$DATE.sql.gz
+
+# Backup uploads and outputs
+tar -czf $BACKUP_DIR/files_$DATE.tar.gz /var/www/reelforge/uploads /var/www/reelforge/outputs
+
+# Delete backups older than 30 days
+find $BACKUP_DIR -name "*.gz" -mtime +30 -delete
+
+echo "Backup completed: $DATE"
+\end{lstlisting}
+
+\subsection{Cron Job for Backups}
+
+\begin{lstlisting}[language=bash]
+# Make script executable
+sudo chmod +x /usr/local/bin/backup-reelforge.sh
+
+# Add to crontab (daily at 2 AM)
+sudo crontab -e
+
+# Add this line:
+0 2 * * * /usr/local/bin/backup-reelforge.sh >> /var/log/reelforge/backup.log 2>&1
+\end{lstlisting}
+
+\section{Security Hardening}
+
+\subsection{PostgreSQL Security}
+
+\begin{lstlisting}[caption=/etc/postgresql/14/main/pg_hba.conf]
+# Only allow local connections
+local   reelforge    reelforge_user                      md5
+host    reelforge    reelforge_user    127.0.0.1/32      md5
+host    reelforge    reelforge_user    ::1/128           md5
+\end{lstlisting}
+
+\subsection{File Permissions}
+
+\begin{lstlisting}[language=bash]
+# Set proper ownership
+sudo chown -R www-data:www-data /var/www/reelforge
+
+# Restrict permissions
+chmod 750 /var/www/reelforge
+chmod 640 /var/www/reelforge/.env
+chmod 755 /var/www/reelforge/uploads
+chmod 755 /var/www/reelforge/outputs
+\end{lstlisting}
+
+\section{OAuth App Configuration}
+
+\subsection{YouTube API Console}
+
+\begin{enumerate}
+    \item Go to Google Cloud Console: \url{https://console.cloud.google.com}
+    \item Create new project or select existing
+    \item Enable YouTube Data API v3
+    \item Create OAuth 2.0 credentials
+    \item Add authorized redirect URIs:
+    \begin{itemize}
+        \item \texttt{https://yourdomain.com/api/social/youtube/callback}
+    \end{itemize}
+    \item Copy Client ID and Client Secret to .env
+\end{enumerate}
+
+\subsection{Facebook App Dashboard}
+
+\begin{enumerate}
+    \item Go to Facebook Developers: \url{https://developers.facebook.com}
+    \item Create new app (type: Business)
+    \item Add Facebook Login product
+    \item Configure OAuth redirect URIs:
+    \begin{itemize}
+        \item \texttt{https://yourdomain.com/api/social/facebook/callback}
+    \end{itemize}
+    \item Add required permissions: \texttt{pages\_show\_list}, \texttt{pages\_manage\_posts}
+    \item Copy App ID and App Secret to .env
+    \item Submit for app review before production use
+\end{enumerate}
+
+\section{Health Checks}
+
+\subsection{Application Health Endpoint}
+
+Create health check endpoint:
+
+\begin{lstlisting}[language=JavaScript, caption=server/routes.ts - Health check]
+app.get('/health', async (req, res) => {
+  try {
+    // Check database connection
+    await db.execute('SELECT 1');
+    
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: 'connected'
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      error: error.message
+    });
+  }
+});
+\end{lstlisting}
+
+\subsection{External Monitoring}
+
+Configure external monitoring service (UptimeRobot, Pingdom, etc.):
+
+\begin{itemize}
+    \item Monitor: \texttt{https://yourdomain.com/health}
+    \item Interval: Every 5 minutes
+    \item Alert on: HTTP status code != 200
+\end{itemize}
+
+\section{Deployment Checklist}
+
+\begin{enumerate}
+    \item[$\square$] Server provisioned and dependencies installed
+    \item[$\square$] PostgreSQL database created and configured
+    \item[$\square$] Application code cloned and built
+    \item[$\square$] Environment variables configured (.env)
+    \item[$\square$] Database migrations executed
+    \item[$\square$] Directories created with proper permissions
+    \item[$\square$] PM2 configured and application started
+    \item[$\square$] SSL certificate obtained and configured
+    \item[$\square$] Nginx configured and running
+    \item[$\square$] Firewall configured (UFW)
+    \item[$\square$] OAuth apps configured (YouTube, Facebook)
+    \item[$\square$] Backup script created and scheduled
+    \item[$\square$] Log rotation configured
+    \item[$\square$] Monitoring setup (PM2, external)
+    \item[$\square$] Health check endpoint tested
+    \item[$\square$] Application tested end-to-end
+\end{enumerate}
+
+\section{Troubleshooting}
+
+\subsection{Application Won't Start}
+
+\begin{lstlisting}[language=bash]
+# Check PM2 logs
+pm2 logs reelforge --lines 100
+
+# Check environment variables
+pm2 env reelforge
+
+# Manually start to see errors
+cd /var/www/reelforge
+npm start
+\end{lstlisting}
+
+\subsection{Database Connection Issues}
+
+\begin{lstlisting}[language=bash]
+# Test PostgreSQL connection
+psql -U reelforge_user -d reelforge -h localhost
+
+# Check PostgreSQL service
+sudo systemctl status postgresql
+
+# Check PostgreSQL logs
+sudo tail -f /var/log/postgresql/postgresql-14-main.log
+\end{lstlisting}
+
+\subsection{Nginx Issues}
+
+\begin{lstlisting}[language=bash]
+# Test Nginx configuration
+sudo nginx -t
+
+# Check Nginx logs
+sudo tail -f /var/log/nginx/reelforge_error.log
+
+# Restart Nginx
+sudo systemctl restart nginx
+\end{lstlisting}
+
+\subsection{File Upload Issues}
+
+\begin{itemize}
+    \item Check \texttt{client\_max\_body\_size} in Nginx config
+    \item Verify upload directory permissions
+    \item Check disk space: \texttt{df -h}
+    \item Review timeout settings in Nginx and application
+\end{itemize}
+
+\section{Updating the Application}
+
+\begin{lstlisting}[language=bash]
+# Navigate to application directory
+cd /var/www/reelforge
+
+# Pull latest code
+git pull origin production
+
+# Install dependencies
+npm install --production
+
+# Rebuild application
+npm run build
+
+# Run database migrations (if any)
+npm run db:push
+
+# Restart application
+pm2 restart reelforge
+
+# Check status
+pm2 status
+pm2 logs reelforge --lines 50
+\end{lstlisting}

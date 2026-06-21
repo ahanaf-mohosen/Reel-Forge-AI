@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+
+# Runtime / user data
+uploads/
+outputs/
+
+# Video & audio media
+*.mp4
+*.mov
+*.avi
+*.webm
+*.mkv
+*.mpeg
+*.mpg
+*.3gp
+*.ogv
+*.wmv
+*.flv
+*.m4v
+
+# Archives
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+
+# Unused scaffold
+ReelForgeAI.AspNetAngular/
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+
+# TypeScript
+*.tsbuildinfo

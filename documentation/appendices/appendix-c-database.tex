@@ -1,0 +1,625 @@
+\chapter{Database Schema}
+\label{appendix:database}
+
+This appendix provides comprehensive documentation of the PostgreSQL database schema used in Reel Forge AI.
+
+\section{Entity Relationship Diagram}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2cm, every node/.style={font=\small}]
+  
+  % Users table
+  \node[draw, rectangle, minimum width=3cm, minimum height=1.5cm] (users) {
+    \textbf{users}
+    \begin{tabular}{l}
+      \underline{id} \\
+      username \\
+      email \\
+      password \\
+      created\_at
+    \end{tabular}
+  };
+  
+  % Projects table
+  \node[draw, rectangle, minimum width=3.5cm, minimum height=2cm, right=3cm of users] (projects) {
+    \textbf{projects}
+    \begin{tabular}{l}
+      \underline{id} \\
+      user\_id (FK) \\
+      title \\
+      description \\
+      video\_path \\
+      transcript\_path \\
+      status \\
+      created\_at \\
+      metadata
+    \end{tabular}
+  };
+  
+  % Reels table
+  \node[draw, rectangle, minimum width=3.5cm, minimum height=2.5cm, below=of projects] (reels) {
+    \textbf{reels}
+    \begin{tabular}{l}
+      \underline{id} \\
+      project\_id (FK) \\
+      title \\
+      video\_path \\
+      start\_time \\
+      end\_time \\
+      transcript \\
+      engagement\_score \\
+      created\_at
+    \end{tabular}
+  };
+  
+  % Social Accounts table
+  \node[draw, rectangle, minimum width=3.5cm, minimum height=2cm, below=of users] (social) {
+    \textbf{social\_accounts}
+    \begin{tabular}{l}
+      \underline{id} \\
+      user\_id (FK) \\
+      platform \\
+      account\_id \\
+      access\_token \\
+      refresh\_token \\
+      expires\_at \\
+      metadata \\
+      created\_at
+    \end{tabular}
+  };
+  
+  % Uploads table
+  \node[draw, rectangle, minimum width=3cm, minimum height=2cm, below=of reels] (uploads) {
+    \textbf{uploads}
+    \begin{tabular}{l}
+      \underline{id} \\
+      reel\_id (FK) \\
+      platform \\
+      platform\_video\_id \\
+      status \\
+      uploaded\_at \\
+      metadata
+    \end{tabular}
+  };
+  
+  % Relationships
+  \draw[->, thick] (users.east) -- (projects.west) node[midway, above] {1:N};
+  \draw[->, thick] (projects.south) -- (reels.north) node[midway, right] {1:N};
+  \draw[->, thick] (users.south) -- (social.north) node[midway, left] {1:N};
+  \draw[->, thick] (reels.south) -- (uploads.north) node[midway, right] {1:N};
+
+\end{tikzpicture}
+\caption{Entity Relationship Diagram showing all database tables and relationships}
+\end{figure}
+
+\section{Table Definitions}
+
+\subsection{users}
+
+Stores user account information.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|p{5cm}|}
+\hline
+\textbf{Column} & \textbf{Type} & \textbf{Constraints} & \textbf{Description} \\
+\hline
+id & SERIAL & PRIMARY KEY & Unique user identifier \\
+username & TEXT & NOT NULL, UNIQUE & User's chosen username \\
+email & TEXT & NOT NULL, UNIQUE & User's email address \\
+password & TEXT & NOT NULL & Bcrypt hashed password \\
+created\_at & TIMESTAMP & DEFAULT NOW() & Account creation timestamp \\
+\hline
+\end{tabular}
+\caption{users table schema}
+\end{table}
+
+\textbf{Indexes:}
+\begin{itemize}
+    \item PRIMARY KEY on \texttt{id}
+    \item UNIQUE INDEX on \texttt{username}
+    \item UNIQUE INDEX on \texttt{email}
+\end{itemize}
+
+\textbf{SQL Definition:}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+\end{lstlisting}
+
+\subsection{projects}
+
+Stores video projects uploaded by users.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|p{4cm}|}
+\hline
+\textbf{Column} & \textbf{Type} & \textbf{Constraints} & \textbf{Description} \\
+\hline
+id & SERIAL & PRIMARY KEY & Unique project identifier \\
+user\_id & INTEGER & NOT NULL, FK(users.id) & Owner user ID \\
+title & TEXT & NOT NULL & Project title \\
+description & TEXT & NULL & Project description \\
+video\_path & TEXT & NULL & Path to original video \\
+transcript\_path & TEXT & NULL & Path to transcript JSON \\
+status & TEXT & NOT NULL, DEFAULT 'pending' & Processing status \\
+created\_at & TIMESTAMP & DEFAULT NOW() & Creation timestamp \\
+metadata & JSONB & NULL & Additional metadata \\
+\hline
+\end{tabular}
+\caption{projects table schema}
+\end{table}
+
+\textbf{Status Values:}
+\begin{itemize}
+    \item \texttt{pending}: Awaiting processing
+    \item \texttt{processing}: Currently being processed
+    \item \texttt{completed}: Processing finished successfully
+    \item \texttt{failed}: Processing encountered error
+\end{itemize}
+
+\textbf{Metadata JSON Structure:}
+\begin{lstlisting}[language=JSON]
+{
+  "duration": 1800,
+  "resolution": "1920x1080",
+  "fps": 30,
+  "fileSize": 524288000,
+  "codec": "h264"
+}
+\end{lstlisting}
+
+\textbf{Indexes:}
+\begin{itemize}
+    \item PRIMARY KEY on \texttt{id}
+    \item INDEX on \texttt{user\_id}
+    \item INDEX on \texttt{status}
+    \item INDEX on \texttt{created\_at}
+\end{itemize}
+
+\textbf{SQL Definition:}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE projects (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  video_path TEXT,
+  transcript_path TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  metadata JSONB
+);
+
+CREATE INDEX idx_projects_user_id ON projects(user_id);
+CREATE INDEX idx_projects_status ON projects(status);
+CREATE INDEX idx_projects_created_at ON projects(created_at DESC);
+\end{lstlisting}
+
+\subsection{reels}
+
+Stores generated video clips (reels) from projects.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|p{4cm}|}
+\hline
+\textbf{Column} & \textbf{Type} & \textbf{Constraints} & \textbf{Description} \\
+\hline
+id & SERIAL & PRIMARY KEY & Unique reel identifier \\
+project\_id & INTEGER & NOT NULL, FK(projects.id) & Parent project ID \\
+title & TEXT & NOT NULL & Reel title \\
+video\_path & TEXT & NOT NULL & Path to reel video file \\
+start\_time & INTEGER & NOT NULL & Start time in seconds \\
+end\_time & INTEGER & NOT NULL & End time in seconds \\
+transcript & TEXT & NULL & Reel transcript excerpt \\
+engagement\_score & INTEGER & NULL & AI engagement score (0-100) \\
+created\_at & TIMESTAMP & DEFAULT NOW() & Creation timestamp \\
+\hline
+\end{tabular}
+\caption{reels table schema}
+\end{table}
+
+\textbf{Indexes:}
+\begin{itemize}
+    \item PRIMARY KEY on \texttt{id}
+    \item INDEX on \texttt{project\_id}
+    \item INDEX on \texttt{engagement\_score}
+\end{itemize}
+
+\textbf{SQL Definition:}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE reels (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL 
+    REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  video_path TEXT NOT NULL,
+  start_time INTEGER NOT NULL,
+  end_time INTEGER NOT NULL,
+  transcript TEXT,
+  engagement_score INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  
+  CONSTRAINT valid_times CHECK (end_time > start_time),
+  CONSTRAINT valid_score CHECK (
+    engagement_score IS NULL OR 
+    (engagement_score >= 0 AND engagement_score <= 100)
+  )
+);
+
+CREATE INDEX idx_reels_project_id ON reels(project_id);
+CREATE INDEX idx_reels_engagement_score 
+  ON reels(engagement_score DESC);
+\end{lstlisting}
+
+\subsection{social\_accounts}
+
+Stores OAuth credentials for connected social media accounts.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|p{4cm}|}
+\hline
+\textbf{Column} & \textbf{Type} & \textbf{Constraints} & \textbf{Description} \\
+\hline
+id & SERIAL & PRIMARY KEY & Unique account identifier \\
+user\_id & INTEGER & NOT NULL, FK(users.id) & Owner user ID \\
+platform & TEXT & NOT NULL & Platform name \\
+account\_id & TEXT & NOT NULL & Platform account ID \\
+access\_token & TEXT & NOT NULL & OAuth access token \\
+refresh\_token & TEXT & NULL & OAuth refresh token \\
+expires\_at & TIMESTAMP & NULL & Token expiration time \\
+metadata & JSONB & NULL & Platform-specific data \\
+created\_at & TIMESTAMP & DEFAULT NOW() & Connection timestamp \\
+\hline
+\end{tabular}
+\caption{social\_accounts table schema}
+\end{table}
+
+\textbf{Platform Values:}
+\begin{itemize}
+    \item \texttt{youtube}
+    \item \texttt{facebook}
+    \item \texttt{instagram}
+\end{itemize}
+
+\textbf{Metadata Examples:}
+
+YouTube:
+\begin{lstlisting}[language=JSON]
+{
+  "channelId": "UCxxxxx",
+  "channelName": "My Channel",
+  "subscriberCount": 15000
+}
+\end{lstlisting}
+
+Facebook:
+\begin{lstlisting}[language=JSON]
+{
+  "name": "John Doe",
+  "pages": [
+    {
+      "id": "987654321",
+      "name": "My Page",
+      "access_token": "page_token_here"
+    }
+  ]
+}
+\end{lstlisting}
+
+\textbf{Indexes:}
+\begin{itemize}
+    \item PRIMARY KEY on \texttt{id}
+    \item INDEX on \texttt{user\_id}
+    \item UNIQUE INDEX on (\texttt{user\_id}, \texttt{platform})
+\end{itemize}
+
+\textbf{SQL Definition:}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE social_accounts (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  expires_at TIMESTAMP,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  
+  CONSTRAINT unique_user_platform UNIQUE (user_id, platform)
+);
+
+CREATE INDEX idx_social_accounts_user_id ON social_accounts(user_id);
+CREATE INDEX idx_social_accounts_platform ON social_accounts(platform);
+CREATE INDEX idx_social_accounts_expires_at ON social_accounts(expires_at);
+\end{lstlisting}
+
+\subsection{uploads}
+
+Tracks video uploads to social media platforms.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|p{4cm}|}
+\hline
+\textbf{Column} & \textbf{Type} & \textbf{Constraints} & \textbf{Description} \\
+\hline
+id & SERIAL & PRIMARY KEY & Unique upload identifier \\
+reel\_id & INTEGER & NOT NULL, FK(reels.id) & Source reel ID \\
+platform & TEXT & NOT NULL & Target platform \\
+platform\_video\_id & TEXT & NULL & Platform's video ID \\
+status & TEXT & NOT NULL, DEFAULT 'pending' & Upload status \\
+uploaded\_at & TIMESTAMP & NULL & Upload completion time \\
+metadata & JSONB & NULL & Upload metadata \\
+\hline
+\end{tabular}
+\caption{uploads table schema}
+\end{table}
+
+\textbf{Status Values:}
+\begin{itemize}
+    \item \texttt{pending}: Queued for upload
+    \item \texttt{processing}: Currently uploading
+    \item \texttt{completed}: Upload successful
+    \item \texttt{failed}: Upload failed
+\end{itemize}
+
+\textbf{Metadata Structure:}
+\begin{lstlisting}[language=JSON]
+{
+  "title": "My Video Title",
+  "description": "Video description",
+  "tags": ["ai", "highlights"],
+  "url": "https://youtube.com/shorts/xyz",
+  "views": 1500,
+  "error": "Error message if failed"
+}
+\end{lstlisting}
+
+\textbf{Indexes:}
+\begin{itemize}
+    \item PRIMARY KEY on \texttt{id}
+    \item INDEX on \texttt{reel\_id}
+    \item INDEX on \texttt{platform}
+    \item INDEX on \texttt{status}
+\end{itemize}
+
+\textbf{SQL Definition:}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE uploads (
+  id SERIAL PRIMARY KEY,
+  reel_id INTEGER NOT NULL REFERENCES reels(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  platform_video_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  uploaded_at TIMESTAMP,
+  metadata JSONB
+);
+
+CREATE INDEX idx_uploads_reel_id ON uploads(reel_id);
+CREATE INDEX idx_uploads_platform ON uploads(platform);
+CREATE INDEX idx_uploads_status ON uploads(status);
+CREATE INDEX idx_uploads_uploaded_at ON uploads(uploaded_at DESC);
+\end{lstlisting}
+
+\section{Database Migrations}
+
+\subsection{Initial Migration}
+
+\begin{lstlisting}[language=SQL, caption=migrations/0001\_initial\_schema.sql]
+-- Create users table
+CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create projects table
+CREATE TABLE projects (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  video_path TEXT,
+  transcript_path TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  metadata JSONB
+);
+
+-- Create reels table
+CREATE TABLE reels (
+  id SERIAL PRIMARY KEY,
+  project_id INTEGER NOT NULL 
+    REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  video_path TEXT NOT NULL,
+  start_time INTEGER NOT NULL,
+  end_time INTEGER NOT NULL,
+  transcript TEXT,
+  engagement_score INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  
+  CONSTRAINT valid_times CHECK (end_time > start_time),
+  CONSTRAINT valid_score CHECK (
+    engagement_score IS NULL OR 
+    (engagement_score >= 0 AND engagement_score <= 100)
+  )
+);
+
+-- Create social_accounts table
+CREATE TABLE social_accounts (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  expires_at TIMESTAMP,
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  
+  CONSTRAINT unique_user_platform UNIQUE (user_id, platform)
+);
+
+-- Create uploads table
+CREATE TABLE uploads (
+  id SERIAL PRIMARY KEY,
+  reel_id INTEGER NOT NULL REFERENCES reels(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL,
+  platform_video_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  uploaded_at TIMESTAMP,
+  metadata JSONB
+);
+
+-- Create indexes
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_projects_user_id ON projects(user_id);
+CREATE INDEX idx_projects_status ON projects(status);
+CREATE INDEX idx_projects_created_at ON projects(created_at DESC);
+CREATE INDEX idx_reels_project_id ON reels(project_id);
+CREATE INDEX idx_reels_engagement_score ON reels(engagement_score DESC);
+CREATE INDEX idx_social_accounts_user_id ON social_accounts(user_id);
+CREATE INDEX idx_social_accounts_platform ON social_accounts(platform);
+CREATE INDEX idx_social_accounts_expires_at ON social_accounts(expires_at);
+CREATE INDEX idx_uploads_reel_id ON uploads(reel_id);
+CREATE INDEX idx_uploads_platform ON uploads(platform);
+CREATE INDEX idx_uploads_status ON uploads(status);
+CREATE INDEX idx_uploads_uploaded_at ON uploads(uploaded_at DESC);
+\end{lstlisting}
+
+\section{Common Queries}
+
+\subsection{User Projects with Reel Counts}
+
+\begin{lstlisting}[language=SQL]
+SELECT 
+  p.*,
+  COUNT(r.id) as reels_count
+FROM projects p
+LEFT JOIN reels r ON r.project_id = p.id
+WHERE p.user_id = $1
+GROUP BY p.id
+ORDER BY p.created_at DESC;
+\end{lstlisting}
+
+\subsection{Reels with Upload Status}
+
+\begin{lstlisting}[language=SQL]
+SELECT 
+  r.*,
+  json_agg(json_build_object(
+    'platform', u.platform,
+    'status', u.status,
+    'platformVideoId', u.platform_video_id,
+    'uploadedAt', u.uploaded_at
+  )) as uploads
+FROM reels r
+LEFT JOIN uploads u ON u.reel_id = r.id
+WHERE r.project_id = $1
+GROUP BY r.id
+ORDER BY r.engagement_score DESC;
+\end{lstlisting}
+
+\subsection{Connected Social Accounts}
+
+\begin{lstlisting}[language=SQL]
+SELECT 
+  platform,
+  account_id,
+  metadata,
+  expires_at,
+  created_at
+FROM social_accounts
+WHERE user_id = $1
+  AND (expires_at IS NULL OR expires_at > NOW())
+ORDER BY platform;
+\end{lstlisting}
+
+\subsection{Processing Statistics}
+
+\begin{lstlisting}[language=SQL]
+SELECT 
+  status,
+  COUNT(*) as count,
+  AVG(EXTRACT(EPOCH FROM (NOW() - created_at))) as avg_age_seconds
+FROM projects
+WHERE user_id = $1
+GROUP BY status;
+\end{lstlisting}
+
+\section{Database Maintenance}
+
+\subsection{Cleanup Old Uploads}
+
+\begin{lstlisting}[language=SQL]
+-- Delete upload records older than 90 days
+DELETE FROM uploads
+WHERE uploaded_at < NOW() - INTERVAL '90 days'
+  AND status = 'completed';
+\end{lstlisting}
+
+\subsection{Vacuum and Analyze}
+
+\begin{lstlisting}[language=SQL]
+-- Regular maintenance
+VACUUM ANALYZE users;
+VACUUM ANALYZE projects;
+VACUUM ANALYZE reels;
+VACUUM ANALYZE social_accounts;
+VACUUM ANALYZE uploads;
+\end{lstlisting}
+
+\subsection{Refresh Token Cleanup}
+
+\begin{lstlisting}[language=SQL]
+-- Remove expired social accounts (no refresh token)
+DELETE FROM social_accounts
+WHERE expires_at < NOW()
+  AND refresh_token IS NULL;
+\end{lstlisting}
+
+\section{Backup and Restore}
+
+\subsection{Backup Commands}
+
+\begin{lstlisting}[language=bash]
+# Full database backup
+pg_dump -U postgres -d reelforge > backup_$(date +%Y%m%d).sql
+
+# Schema only backup
+pg_dump -U postgres -d reelforge --schema-only > schema_backup.sql
+
+# Data only backup
+pg_dump -U postgres -d reelforge --data-only > data_backup.sql
+
+# Compressed backup
+pg_dump -U postgres -d reelforge | gzip > backup_$(date +%Y%m%d).sql.gz
+\end{lstlisting}
+
+\subsection{Restore Commands}
+
+\begin{lstlisting}[language=bash]
+# Restore from SQL file
+psql -U postgres -d reelforge < backup_20240115.sql
+
+# Restore from compressed backup
+gunzip -c backup_20240115.sql.gz | psql -U postgres -d reelforge
+\end{lstlisting}

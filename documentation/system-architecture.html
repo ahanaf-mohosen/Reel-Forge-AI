@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reel-Forge-AI — System Architecture</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #ffffff;
+      color: #1e293b;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px 64px;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(90deg, #2563eb, #7c3aed, #059669);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 0.9rem;
+      margin-bottom: 48px;
+    }
+
+    /* ── canvas ── */
+    .canvas {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      width: 100%;
+      max-width: 900px;
+    }
+
+    /* ── arrow connector ── */
+    .arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      z-index: 1;
+    }
+    .arrow-line {
+      width: 2px;
+      height: 28px;
+      background: #94a3b8;
+    }
+    .arrow-head {
+      width: 0;
+      height: 0;
+      border-left: 7px solid transparent;
+      border-right: 7px solid transparent;
+      border-top: 10px solid #94a3b8;
+    }
+    .arrow-label {
+      font-size: 0.7rem;
+      color: #64748b;
+      margin-top: -20px;
+      margin-bottom: 4px;
+      background: #ffffff;
+      padding: 0 6px;
+    }
+
+    /* ── layer card ── */
+    .layer {
+      width: 100%;
+      border-radius: 16px;
+      padding: 20px 28px;
+      border: 1.5px solid;
+      position: relative;
+    }
+
+    .layer-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      margin-bottom: 14px;
+      opacity: 0.7;
+    }
+
+    .boxes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .box {
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      border: 1px solid rgba(0,0,0,0.08);
+      min-width: 130px;
+    }
+
+    .box span {
+      font-size: 0.7rem;
+      font-weight: 400;
+      opacity: 0.65;
+    }
+
+    /* ── colours per layer ── */
+    .layer.client   { background: #eff6ff; border-color: #3b82f6; }
+    .layer.client .layer-title { color: #1d4ed8; }
+    .layer.client .box { background: #dbeafe; color: #1e3a5f; }
+
+    .layer.server   { background: #f0fdf4; border-color: #22c55e; }
+    .layer.server .layer-title { color: #15803d; }
+    .layer.server .box { background: #dcfce7; color: #14532d; }
+
+    .layer.ai       { background: #faf5ff; border-color: #a855f7; }
+    .layer.ai .layer-title { color: #7e22ce; }
+    .layer.ai .box { background: #ede9fe; color: #3b0764; }
+
+    .layer.db       { background: #fff1f2; border-color: #ef4444; }
+    .layer.db .layer-title { color: #b91c1c; }
+    .layer.db .box { background: #fee2e2; color: #7f1d1d; }
+
+    .layer.social   { background: #ecfeff; border-color: #06b6d4; }
+    .layer.social .layer-title { color: #0e7490; }
+    .layer.social .box { background: #cffafe; color: #164e63; }
+
+    .layer.storage  { background: #fffbeb; border-color: #f59e0b; }
+    .layer.storage .layer-title { color: #b45309; }
+    .layer.storage .box { background: #fef3c7; color: #78350f; }
+
+    /* ── pipeline row ── */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      width: 100%;
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 16px 20px;
+      border: 1px dashed #94a3b8;
+    }
+
+    .pipeline-title {
+      font-size: 0.68rem;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+
+    .step {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 4px;
+    }
+
+    .step-icon {
+      font-size: 1.4rem;
+    }
+
+    .step-name {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .step-sub {
+      font-size: 0.65rem;
+      color: #64748b;
+    }
+
+    .step-arrow {
+      font-size: 1.2rem;
+      color: #94a3b8;
+      flex: 0 0 auto;
+      padding: 0 4px;
+    }
+
+    .pipeline-wrap {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .icon { font-size: 1.1rem; margin-right: 6px; }
+  </style>
+</head>
+<body>
+
+  <h1>⚡ Reel-Forge-AI</h1>
+  <p class="subtitle">System Architecture — High-Level Overview</p>
+
+  <div class="canvas">
+
+    <!-- CLIENT -->
+    <div class="layer client">
+      <div class="layer-title">🌐 Frontend — React 18 + Vite (Browser)</div>
+      <div class="boxes">
+        <div class="box">🏠 Landing<span>Public marketing page</span></div>
+        <div class="box">🔑 Auth<span>Sign in / Sign up</span></div>
+        <div class="box">📊 Dashboard<span>Stats & recent projects</span></div>
+        <div class="box">➕ Create<span>Upload video</span></div>
+        <div class="box">⚙️ Processing<span>Live progress (2s poll)</span></div>
+        <div class="box">🎬 Results<span>Preview & download reels</span></div>
+        <div class="box">📚 Library<span>All projects</span></div>
+        <div class="box">⚙️ Settings<span>Profile & social accounts</span></div>
+      </div>
+    </div>
+
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">HTTP / REST API</div>
+      <div class="arrow-line"></div>
+      <div class="arrow-head"></div>
+    </div>
+
+    <!-- SERVER -->
+    <div class="layer server">
+      <div class="layer-title">⚙️ Backend — Node.js + Express 5 (Port 5000)</div>
+      <div class="boxes">
+        <div class="box">🛡️ Middleware<span>Logger · Body parser · Errors</span></div>
+        <div class="box">🔐 Session<span>express-session + Passport.js</span></div>
+        <div class="box">👤 Auth Routes<span>/api/auth/*</span></div>
+        <div class="box">📁 Project Routes<span>/api/projects/*</span></div>
+        <div class="box">📤 Upload Route<span>/api/upload (500 MB)</span></div>
+        <div class="box">💬 Chat Routes<span>/api/conversations/*</span></div>
+        <div class="box">📲 Social Routes<span>/api/social/*</span></div>
+        <div class="box">📂 Static Server<span>/uploads · /outputs</span></div>
+      </div>
+    </div>
+
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">triggers AI pipeline</div>
+      <div class="arrow-line"></div>
+      <div class="arrow-head"></div>
+    </div>
+
+    <!-- AI PIPELINE -->
+    <div class="pipeline-wrap">
+      <div class="pipeline-title">🤖 AI Video Processing Pipeline (FFmpeg + OpenAI)</div>
+      <div class="pipeline">
+        <div class="step">
+          <div class="step-icon">📤</div>
+          <div class="step-name">Upload</div>
+          <div class="step-sub">Video saved to disk</div>
+        </div>
+        <div class="step-arrow">›</div>
+        <div class="step">
+          <div class="step-icon">🎵</div>
+          <div class="step-name">Extract Audio</div>
+          <div class="step-sub">FFmpeg → WAV</div>
+        </div>
+        <div class="step-arrow">›</div>
+        <div class="step">
+          <div class="step-icon">🎤</div>
+          <div class="step-name">Transcribe</div>
+          <div class="step-sub">Whisper STT</div>
+        </div>
+        <div class="step-arrow">›</div>
+        <div class="step">
+          <div class="step-icon">🧠</div>
+          <div class="step-name">Analyse</div>
+          <div class="step-sub">GPT-4o-mini</div>
+        </div>
+        <div class="step-arrow">›</div>
+        <div class="step">
+          <div class="step-icon">✂️</div>
+          <div class="step-name">Cut Clips</div>
+          <div class="step-sub">FFmpeg → MP4</div>
+        </div>
+        <div class="step-arrow">›</div>
+        <div class="step">
+          <div class="step-icon">✅</div>
+          <div class="step-name">Done</div>
+          <div class="step-sub">Reels ready</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-line"></div>
+      <div class="arrow-head"></div>
+    </div>
+
+    <!-- DB + STORAGE side by side -->
+    <div class="two-col">
+      <div class="layer db">
+        <div class="layer-title">🗄️ PostgreSQL (Drizzle ORM)</div>
+        <div class="boxes">
+          <div class="box">👤 users<span>email · bcrypt hash</span></div>
+          <div class="box">🔐 sessions<span>session store</span></div>
+          <div class="box">📲 socialAccounts<span>OAuth tokens</span></div>
+          <div class="box">💬 conversations<span>chat messages</span></div>
+        </div>
+      </div>
+
+      <div class="layer storage">
+        <div class="layer-title">📁 Local File System</div>
+        <div class="boxes">
+          <div class="box">📤 ./uploads/<span>Original videos & avatars</span></div>
+          <div class="box">🎬 ./outputs/<span>Generated reel MP4s</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">OAuth + publish</div>
+      <div class="arrow-line"></div>
+      <div class="arrow-head"></div>
+    </div>
+
+    <!-- SOCIAL -->
+    <div class="layer social">
+      <div class="layer-title">📲 Social Platforms</div>
+      <div class="boxes">
+        <div class="box">▶️ YouTube<span>googleapis · OAuth2 · video.insert</span></div>
+        <div class="box">📘 Facebook<span>Graph API v18 · pages_manage_posts</span></div>
+        <div class="box">📷 Instagram<span>Graph API · content_publish</span></div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

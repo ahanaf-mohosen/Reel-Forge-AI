@@ -1,0 +1,781 @@
+\chapter{Implementation}
+
+\section{Introduction}
+
+This chapter details the technical implementation of Reel Forge AI, covering backend services, frontend components, integration challenges, and solutions. Code examples demonstrate key implementations and design patterns used throughout the project.
+
+\section{Backend Implementation}
+
+\subsection{Server Setup and Configuration}
+
+The Express server is configured with essential middleware:
+
+\begin{lstlisting}[language=JavaScript, caption=Server Configuration (server/index.ts)]
+import express from 'express';
+import session from 'express-session';
+import { db } from './db';
+import authRoutes from './integrations/auth/routes';
+import socialRoutes from './integrations/social/routes';
+import uploadRoutes from './routes';
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Routes
+app.use('/api', authRoutes);
+app.use('/api/social', socialRoutes);
+app.use('/api', uploadRoutes);
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+\end{lstlisting}
+
+\subsection{Database Configuration}
+
+Drizzle ORM provides type-safe database operations:
+
+\begin{lstlisting}[language=JavaScript, caption=Database Schema Definition (shared/schema.ts)]
+import { pgTable, serial, text, varchar, timestamp } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  password: text('password').notNull(),
+  username: varchar('username', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+export const projects = pgTable('projects', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: integer('user_id').references(() => users.id),
+  name: varchar('name', { length: 255 }).notNull(),
+  status: varchar('status', { length: 50 }).default('processing'),
+  progress: integer('progress').default(0),
+  videoPath: text('video_path'),
+  transcript: text('transcript'),
+  createdAt: timestamp('created_at').defaultNow()
+});
+
+export const socialMediaAccounts = pgTable('social_media_accounts', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id),
+  platform: varchar('platform', { length: 50 }).notNull(),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token'),
+  createdAt: timestamp('created_at').defaultNow()
+});
+\end{lstlisting}
+
+\subsection{Authentication Implementation}
+
+User authentication with secure password hashing:
+
+\begin{lstlisting}[language=JavaScript, caption=Authentication Service (server/auth.ts)]
+import { scrypt, randomBytes, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
+import { users } from '../shared/schema';
+import { db } from './db';
+
+const scryptAsync = promisify(scrypt);
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString('hex');
+  const buf = await scryptAsync(password, salt, 64) as Buffer;
+  return `${buf.toString('hex')}.${salt}`;
+}
+
+export async function comparePasswords(
+  supplied: string,
+  stored: string
+): Promise<boolean> {
+  const [hashedPassword, salt] = stored.split('.');
+  const hashedSupplied = await scryptAsync(supplied, salt, 64) as Buffer;
+  const hashedStored = Buffer.from(hashedPassword, 'hex');
+  return timingSafeEqual(hashedSupplied, hashedStored);
+}
+
+export async function login(email: string, password: string) {
+  const user = await db.select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+  
+  if (!user.length) {
+    throw new Error('Invalid credentials');
+  }
+  
+  const isValid = await comparePasswords(password, user[0].password);
+  
+  if (!isValid) {
+    throw new Error('Invalid credentials');
+  }
+  
+  return user[0];
+}
+\end{lstlisting}
+
+\subsection{OAuth 2.0 Integration}
+
+\subsubsection{YouTube OAuth Implementation}
+
+\begin{lstlisting}[language=JavaScript, caption=YouTube OAuth (server/integrations/social/routes.ts)]
+import { google } from 'googleapis';
+import express from 'express';
+
+const router = express.Router();
+const YOUTUBE_CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
+const YOUTUBE_CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
+const REDIRECT_URI = `${process.env.APP_URL}/api/social/youtube/callback`;
+
+const oauth2Client = new google.auth.OAuth2(
+  YOUTUBE_CLIENT_ID,
+  YOUTUBE_CLIENT_SECRET,
+  REDIRECT_URI
+);
+
+router.get('/youtube/auth', (req, res) => {
+  const scopes = [
+    'https://www.googleapis.com/auth/youtube.upload',
+    'https://www.googleapis.com/auth/youtube'
+  ];
+  
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: scopes,
+    state: req.session.userId
+  });
+  
+  res.json({ authUrl });
+});
+
+router.get('/youtube/callback', async (req, res) => {
+  const { code, state } = req.query;
+  const userId = state;
+  
+  try {
+    const { tokens } = await oauth2Client.getToken(code as string);
+    
+    // Store tokens in database
+    await socialMediaStorage.saveAccount(
+      parseInt(userId as string),
+      'youtube',
+      tokens.access_token,
+      tokens.refresh_token
+    );
+    
+    res.redirect('/settings?connected=youtube');
+  } catch (error) {
+    console.error('OAuth error:', error);
+    res.redirect('/settings?error=oauth_failed');
+  }
+});
+
+export default router;
+\end{lstlisting}
+
+\subsubsection{Facebook/Instagram OAuth Implementation}
+
+\begin{lstlisting}[language=JavaScript, caption=Facebook OAuth Flow]
+router.get('/facebook/auth', (req, res) => {
+  const clientId = process.env.FACEBOOK_APP_ID;
+  const redirectUri = `${process.env.APP_URL}/api/social/facebook/callback`;
+  const state = req.session.userId;
+  
+  const scopes = [
+    'email',
+    'public_profile',
+    'pages_show_list',
+    'pages_read_engagement',
+    'pages_manage_posts',
+    'instagram_basic',
+    'instagram_content_publish'
+  ].join(',');
+  
+  const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
+    `client_id=${clientId}&` +
+    `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+    `state=${state}&` +
+    `scope=${scopes}`;
+  
+  res.json({ authUrl });
+});
+
+router.get('/facebook/callback', async (req, res) => {
+  const { code, state } = req.query;
+  const userId = state;
+  
+  try {
+    // Exchange code for access token
+    const tokenResponse = await axios.get(
+      'https://graph.facebook.com/v18.0/oauth/access_token',
+      {
+        params: {
+          client_id: process.env.FACEBOOK_APP_ID,
+          client_secret: process.env.FACEBOOK_APP_SECRET,
+          redirect_uri: `${process.env.APP_URL}/api/social/facebook/callback`,
+          code
+        }
+      }
+    );
+    
+    const accessToken = tokenResponse.data.access_token;
+    
+    await socialMediaStorage.saveAccount(
+      parseInt(userId as string),
+      'facebook',
+      accessToken
+    );
+    
+    res.redirect('/settings?connected=facebook');
+  } catch (error) {
+    res.redirect('/settings?error=oauth_failed');
+  }
+});
+\end{lstlisting}
+
+\subsection{Video Processing Pipeline}
+
+\subsubsection{Video Upload Handler}
+
+\begin{lstlisting}[language=JavaScript, caption=Video Upload Endpoint]
+import multer from 'multer';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /mp4|mov|avi|webm/;
+    const ext = path.extname(file.originalname).toLowerCase();
+    
+    if (allowedTypes.test(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type'));
+    }
+  }
+});
+
+router.post('/projects', upload.single('video'), async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const { name } = req.body;
+    const videoPath = req.file?.path;
+    
+    const project = await db.insert(projects).values({
+      userId,
+      name,
+      videoPath,
+      status: 'processing'
+    }).returning();
+    
+    // Trigger async processing
+    processVideoAsync(project[0].id);
+    
+    res.json({ ok: true, project: project[0] });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: 'Upload failed' });
+  }
+});
+\end{lstlisting}
+
+\subsubsection{Transcript Generation}
+
+\begin{lstlisting}[language=JavaScript, caption=AI Transcript Generation]
+import { OpenAI } from 'openai';
+import fs from 'fs';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+async function generateTranscript(videoPath: string): Promise<string> {
+  try {
+    // Extract audio from video using FFmpeg
+    const audioPath = videoPath.replace('.mp4', '.mp3');
+    await extractAudio(videoPath, audioPath);
+    
+    // Send to OpenAI Whisper
+    const transcription = await openai.audio.transcriptions.create({
+      file: fs.createReadStream(audioPath),
+      model: 'whisper-1',
+      language: 'en'
+    });
+    
+    // Cleanup audio file
+    fs.unlinkSync(audioPath);
+    
+    return transcription.text;
+  } catch (error) {
+    console.error('Transcription error:', error);
+    throw error;
+  }
+}
+
+function extractAudio(videoPath: string, audioPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', videoPath,
+      '-vn',
+      '-acodec', 'libmp3lame',
+      '-q:a', '2',
+      audioPath
+    ]);
+    
+    ffmpeg.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg exited with code ${code}`));
+    });
+  });
+}
+\end{lstlisting}
+
+\subsubsection{Video Cutting Implementation}
+
+\begin{lstlisting}[language=JavaScript, caption=Video Clip Generation]
+import { spawn } from 'child_process';
+import path from 'path';
+
+async function cutVideo(
+  videoPath: string,
+  startTime: number,
+  endTime: number,
+  outputPath: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const duration = endTime - startTime;
+    
+    const ffmpeg = spawn('ffmpeg', [
+      '-i', videoPath,
+      '-ss', startTime.toString(),
+      '-t', duration.toString(),
+      '-c:v', 'libx264',
+      '-c:a', 'aac',
+      '-b:v', '2M',
+      '-b:a', '128k',
+      '-y',
+      outputPath
+    ]);
+    
+    let stderr = '';
+    
+    ffmpeg.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg failed: ${stderr}`));
+      }
+    });
+  });
+}
+
+async function generateClips(projectId: string, highlights: any[]) {
+  const project = await db.select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+  
+  const videoPath = project[0].videoPath;
+  
+  for (let i = 0; i < highlights.length; i++) {
+    const { start, end, text } = highlights[i];
+    const outputPath = path.join('outputs', `${projectId}-clip-${i + 1}.mp4`);
+    
+    await cutVideo(videoPath, start, end, outputPath);
+    
+    await db.insert(clips).values({
+      projectId,
+      filePath: outputPath,
+      startTime: start,
+      endTime: end,
+      caption: text
+    });
+  }
+}
+\end{lstlisting}
+
+\subsection{Social Media Upload Implementation}
+
+\subsubsection{YouTube Upload}
+
+\begin{lstlisting}[language=JavaScript, caption=YouTube Video Upload]
+import { google } from 'googleapis';
+import fs from 'fs';
+
+async function uploadToYouTube(
+  userId: number,
+  videoPath: string,
+  title: string,
+  description: string
+) {
+  const account = await socialMediaStorage.getAccount(userId, 'youtube');
+  
+  if (!account) {
+    throw new Error('YouTube not connected');
+  }
+  
+  oauth2Client.setCredentials({
+    access_token: account.accessToken,
+    refresh_token: account.refreshToken
+  });
+  
+  const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+  
+  const response = await youtube.videos.insert({
+    part: ['snippet', 'status'],
+    requestBody: {
+      snippet: {
+        title,
+        description,
+        categoryId: '22' // People & Blogs
+      },
+      status: {
+        privacyStatus: 'public',
+        madeForKids: false
+      }
+    },
+    media: {
+      body: fs.createReadStream(videoPath)
+    }
+  });
+  
+  return response.data;
+}
+\end{lstlisting}
+
+\subsubsection{Facebook Page Upload}
+
+\begin{lstlisting}[language=JavaScript, caption=Facebook Reels Upload]
+async function uploadToFacebook(
+  userId: number,
+  videoPath: string,
+  caption: string
+) {
+  const account = await socialMediaStorage.getAccount(userId, 'facebook');
+  const accessToken = account.accessToken;
+  
+  // Smart fallback: try dynamic page access, fallback to hardcoded
+  let pageId: string;
+  let pageAccessToken: string;
+  
+  try {
+    const pagesResponse = await axios.get(
+      'https://graph.facebook.com/me/accounts',
+      { params: { access_token: accessToken } }
+    );
+    
+    if (pagesResponse.data.data?.length > 0) {
+      const page = pagesResponse.data.data[0];
+      pageId = page.id;
+      pageAccessToken = page.access_token;
+    } else {
+      // Fallback to known page
+      const pageResponse = await axios.get(
+        'https://graph.facebook.com/animex.studio24',
+        {
+          params: {
+            fields: 'id,access_token',
+            access_token: accessToken
+          }
+        }
+      );
+      pageId = pageResponse.data.id;
+      pageAccessToken = pageResponse.data.access_token || accessToken;
+    }
+  } catch (error) {
+    throw new Error('Could not access Facebook page');
+  }
+  
+  // Upload video
+  const form = new FormData();
+  form.append('source', fs.createReadStream(videoPath));
+  form.append('description', caption);
+  
+  const uploadResponse = await axios.post(
+    `https://graph.facebook.com/v18.0/${pageId}/videos`,
+    form,
+    {
+      params: { access_token: pageAccessToken },
+      headers: form.getHeaders()
+    }
+  );
+  
+  return uploadResponse.data;
+}
+\end{lstlisting}
+
+\section{Frontend Implementation}
+
+\subsection{Application Structure}
+
+The React application uses a component-based architecture:
+
+\begin{lstlisting}[language=JavaScript, caption=App Component Structure]
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from './components/theme-provider';
+import LandingPage from './pages/landing';
+import Dashboard from './pages/dashboard';
+import CreatePage from './pages/create';
+import LibraryPage from './pages/library';
+import SettingsPage from './pages/settings';
+
+const queryClient = new QueryClient();
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/create" element={<CreatePage />} />
+            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </BrowserRouter>
+      </ThemeProvider>
+    </QueryClientProvider>
+  );
+}
+\end{lstlisting}
+
+\subsection{State Management with TanStack Query}
+
+\begin{lstlisting}[language=JavaScript, caption=Data Fetching Hook]
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+export function useProjects() {
+  return useQuery({
+    queryKey: ['projects'],
+    queryFn: async () => {
+      const res = await fetch('/api/projects');
+      if (!res.ok) throw new Error('Failed to fetch projects');
+      return res.json();
+    }
+  });
+}
+
+export function useUploadVideo() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (formData: FormData) => {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    }
+  });
+}
+\end{lstlisting}
+
+\subsection{Key UI Components}
+
+\subsubsection{Video Upload Component}
+
+\begin{lstlisting}[language=JavaScript, caption=Upload Panel Component]
+import { useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { Upload } from 'lucide-react';
+
+export function UploadPanel() {
+  const uploadMutation = useUploadVideo();
+  
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const formData = new FormData();
+    formData.append('video', acceptedFiles[0]);
+    formData.append('name', acceptedFiles[0].name);
+    
+    uploadMutation.mutate(formData);
+  }, [uploadMutation]);
+  
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'video/*': ['.mp4', '.mov', '.avi', '.webm']
+    },
+    maxFiles: 1
+  });
+  
+  return (
+    <div {...getRootProps()} className="upload-dropzone">
+      <input {...getInputProps()} />
+      <Upload className="w-12 h-12" />
+      {isDragActive ? (
+        <p>Drop video here...</p>
+      ) : (
+        <p>Drag and drop video, or click to select</p>
+      )}
+    </div>
+  );
+}
+\end{lstlisting}
+
+\subsubsection{Social Media Connection Component}
+
+\begin{lstlisting}[language=JavaScript, caption=Social Account Connection]
+export function SocialAccountCard({ platform }: { platform: string }) {
+  const { data: connected } = useQuery({
+    queryKey: ['social', platform],
+    queryFn: async () => {
+      const res = await fetch(`/api/social/${platform}/status`);
+      return res.json();
+    }
+  });
+  
+  const connect = async () => {
+    const res = await fetch(`/api/social/${platform}/auth`);
+    const { authUrl } = await res.json();
+    window.location.href = authUrl;
+  };
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{platform}</CardTitle>
+        <CardDescription>
+          {connected ? 'Connected' : 'Not connected'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {connected ? (
+          <Button variant="outline" onClick={() => disconnect(platform)}>
+            Disconnect
+          </Button>
+        ) : (
+          <Button onClick={connect}>Connect</Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+\end{lstlisting}
+
+\section{Integration Challenges and Solutions}
+
+\subsection{Challenge 1: OAuth Token Management}
+
+\textbf{Problem:} Access tokens expire, requiring refresh mechanisms.
+
+\textbf{Solution:} Implemented token refresh logic with automatic retry:
+
+\begin{lstlisting}[language=JavaScript]
+async function refreshYouTubeToken(userId: number) {
+  const account = await getAccount(userId, 'youtube');
+  
+  try {
+    oauth2Client.setCredentials({
+      refresh_token: account.refreshToken
+    });
+    
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    
+    await updateAccount(userId, 'youtube', {
+      accessToken: credentials.access_token,
+      refreshToken: credentials.refresh_token
+    });
+    
+    return credentials.access_token;
+  } catch (error) {
+    // Token expired, require re-authentication
+    throw new Error('Please reconnect your YouTube account');
+  }
+}
+\end{lstlisting}
+
+\subsection{Challenge 2: Large File Upload Handling}
+
+\textbf{Problem:} Large video files cause timeout and memory issues.
+
+\textbf{Solution:} Implemented streaming upload with chunked processing.
+
+\subsection{Challenge 3: Cross-Platform Video Compatibility}
+
+\textbf{Problem:} Different platforms require different video formats.
+
+\textbf{Solution:} Standardized output to H.264/AAC which is widely supported.
+
+\subsection{Challenge 4: Facebook Page Access}
+
+\textbf{Problem:} Dynamic page retrieval requires additional permissions.
+
+\textbf{Solution:} Implemented smart fallback mechanism:
+\begin{enumerate}
+    \item Try dynamic page retrieval via /me/accounts
+    \item Fallback to direct page access using known page username
+    \item Provide clear error messages if both fail
+\end{enumerate}
+
+\section{Development Tools and Workflow}
+
+\subsection{Version Control}
+
+Git workflow with feature branches and semantic commits:
+\begin{verbatim}
+feat: add YouTube upload functionality
+fix: resolve OAuth token refresh issue
+docs: update API documentation
+refactor: improve video processing pipeline
+\end{verbatim}
+
+\subsection{Code Quality Tools}
+
+\begin{itemize}
+    \item \textbf{ESLint:} JavaScript/TypeScript linting
+    \item \textbf{Prettier:} Code formatting
+    \item \textbf{TypeScript:} Static type checking
+    \item \textbf{Drizzle Kit:} Database migration management
+\end{itemize}
+
+\subsection{Development Environment}
+
+\begin{itemize}
+    \item \textbf{VS Code:} Primary IDE with extensions
+    \item \textbf{Postman:} API testing and documentation
+    \item \textbf{PostgreSQL Admin:} Database management
+    \item \textbf{Chrome DevTools:} Frontend debugging
+\end{itemize}
+
+\section{Summary}
+
+This chapter has detailed the complete implementation of Reel Forge AI, from backend services to frontend components. The modular architecture enables independent development and testing of features. Integration challenges were systematically addressed through careful design and fallback mechanisms. The resulting implementation provides a robust, scalable foundation for the platform's continued evolution.

@@ -1,0 +1,1102 @@
+# ReelForge AI - Complete Build Specification for Replit
+
+## Executive Summary
+Build a production-ready AI-powered web application that automatically converts long-form videos into viral short-form reels (9:16 vertical format) optimized for Instagram Reels, TikTok, and YouTube Shorts.
+
+---
+
+## 🎯 Product Overview
+
+### Core Value Proposition
+Users upload a video file, paste a YouTube link, or provide a public video URL. The AI analyzes the content, identifies the most engaging moments, and generates 3 ready-to-publish vertical reels (20-40 seconds each).
+
+### Target Users
+- Content creators
+- Social media managers
+- Marketing teams
+- Influencers
+- Small businesses
+
+---
+
+## 🏗️ Technical Architecture
+
+### Technology Stack
+
+**Frontend:**
+- React 18+
+- TailwindCSS for styling
+- Framer Motion for animations
+- Lucide React for icons
+- Recharts for analytics (optional)
+- React Router for navigation
+
+**Backend:**
+- Node.js (v18+)
+- Express.js
+- Multer for file uploads
+- FFmpeg for video processing
+- Fluent-FFmpeg wrapper
+- OpenAI API (GPT-4 for analysis)
+- Whisper API for transcription
+- ytdl-core for YouTube downloads
+
+**Storage:**
+- Local filesystem (uploads/, outputs/)
+- JSON-based project database (projects.json)
+- Extensible to AWS S3/Supabase
+
+**External Dependencies:**
+- OpenAI API (GPT-4 + Whisper)
+- FFmpeg binary
+- Node.js libraries
+
+---
+
+## 📁 Project Structure
+
+```
+reelforge-ai/
+├── client/
+│   ├── public/
+│   │   ├── index.html
+│   │   └── favicon.ico
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── layout/
+│   │   │   │   ├── Header.jsx
+│   │   │   │   ├── Sidebar.jsx
+│   │   │   │   └── Footer.jsx
+│   │   │   ├── upload/
+│   │   │   │   ├── FileUpload.jsx
+│   │   │   │   ├── YouTubeInput.jsx
+│   │   │   │   └── URLInput.jsx
+│   │   │   ├── processing/
+│   │   │   │   ├── ProgressBar.jsx
+│   │   │   │   ├── StepLoader.jsx
+│   │   │   │   └── VideoPreview.jsx
+│   │   │   ├── editor/
+│   │   │   │   ├── ReelEditor.jsx
+│   │   │   │   ├── Timeline.jsx
+│   │   │   │   ├── PhonePreview.jsx
+│   │   │   │   └── CaptionOverlay.jsx
+│   │   │   ├── results/
+│   │   │   │   ├── ReelGrid.jsx
+│   │   │   │   ├── ReelCard.jsx
+│   │   │   │   └── DownloadButton.jsx
+│   │   │   ├── library/
+│   │   │   │   ├── ProjectList.jsx
+│   │   │   │   ├── ProjectCard.jsx
+│   │   │   │   └── SearchFilter.jsx
+│   │   │   └── common/
+│   │   │       ├── Button.jsx
+│   │   │       ├── Card.jsx
+│   │   │       ├── Input.jsx
+│   │   │       ├── LoadingSpinner.jsx
+│   │   │       └── EmptyState.jsx
+│   │   ├── pages/
+│   │   │   ├── Landing.jsx
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── Create.jsx
+│   │   │   ├── Processing.jsx
+│   │   │   ├── Editor.jsx
+│   │   │   ├── Results.jsx
+│   │   │   ├── Library.jsx
+│   │   │   ├── Settings.jsx
+│   │   │   └── Auth/
+│   │   │       ├── Login.jsx
+│   │   │       ├── Register.jsx
+│   │   │       └── ForgotPassword.jsx
+│   │   ├── hooks/
+│   │   │   ├── useUpload.js
+│   │   │   ├── useProcessing.js
+│   │   │   └── useProjects.js
+│   │   ├── utils/
+│   │   │   ├── api.js
+│   │   │   ├── formatters.js
+│   │   │   └── validators.js
+│   │   ├── context/
+│   │   │   └── AppContext.jsx
+│   │   ├── App.jsx
+│   │   ├── index.js
+│   │   └── index.css
+│   ├── package.json
+│   └── tailwind.config.js
+├── server/
+│   ├── routes/
+│   │   ├── upload.js
+│   │   ├── process.js
+│   │   ├── projects.js
+│   │   └── edit.js
+│   ├── services/
+│   │   ├── videoProcessor.js
+│   │   ├── transcription.js
+│   │   ├── highlightDetector.js
+│   │   ├── ffmpegService.js
+│   │   └── youtubeDownloader.js
+│   ├── utils/
+│   │   ├── fileValidation.js
+│   │   ├── errorHandler.js
+│   │   └── logger.js
+│   ├── middleware/
+│   │   ├── uploadMiddleware.js
+│   │   └── errorMiddleware.js
+│   ├── config/
+│   │   └── constants.js
+│   ├── database/
+│   │   └── projects.json
+│   └── server.js
+├── uploads/
+├── outputs/
+├── .env.example
+├── .env
+├── .gitignore
+├── package.json
+├── README.md
+└── replit.nix (for Replit configuration)
+```
+
+---
+
+## 🎨 Complete UX Flow & Screen Specifications
+
+### 1. Landing Page (`/`)
+
+**Purpose:** First impression, value proposition, and upload entry point
+
+**Layout:**
+- Fixed header with logo ("ReelForge AI") and "Get Started" CTA
+- Hero section with headline and subheadline
+- Upload panel (3 input methods)
+- Features section (3 columns)
+- Example previews
+- Footer with links
+
+**Components:**
+- Header: Logo left, "Dashboard" and "Login" buttons right
+- Hero: 
+  - H1: "Turn Long Videos Into Viral Reels"
+  - H2: "AI-powered video editing that finds your best moments"
+- Upload Panel Card:
+  - Tab switcher: "Upload File" | "YouTube URL" | "Video URL"
+  - Drag-and-drop zone with file picker
+  - Input field with validation
+  - "Generate Reels" button (primary, large)
+- Feature Cards:
+  - "AI-Powered Analysis" with icon
+  - "3 Reels in Minutes" with icon
+  - "Ready for All Platforms" with icon
+
+**States:**
+- Default (empty)
+- File selected (show filename, size, preview thumbnail)
+- URL input (show validation feedback)
+- Uploading (disable inputs, show progress)
+- Error (show error message with retry)
+
+**Styling:**
+- Light background (#FAFAFA)
+- White cards with soft shadow
+- Primary color: #3B82F6 (blue)
+- Secondary: #10B981 (green)
+- Accent: #F59E0B (amber)
+- Border radius: 12px
+- Padding: 24px
+- Font: Inter or system sans-serif
+
+---
+
+### 2. Authentication Pages (Optional for MVP)
+
+**Login Page (`/login`)**
+- Centered card (max-width 400px)
+- Logo at top
+- Email input
+- Password input
+- "Remember me" checkbox
+- "Login" button
+- "Forgot password?" link
+- "Don't have an account? Sign up" link
+
+**Register Page (`/register`)**
+- Same layout as login
+- Additional fields: Name, Confirm Password
+- Terms acceptance checkbox
+- "Create Account" button
+
+**Forgot Password (`/forgot-password`)**
+- Email input
+- "Send Reset Link" button
+- "Back to Login" link
+
+**Styling:**
+- Minimal design
+- Focused inputs with border on focus
+- Clean error messages below inputs
+
+---
+
+### 3. Dashboard Home (`/dashboard`)
+
+**Layout:**
+- Left sidebar (240px fixed)
+- Main content area (flex-grow)
+- Top bar with search and user profile
+
+**Sidebar Navigation:**
+- Logo at top
+- Menu items:
+  - 🏠 Home (active state)
+  - ✨ Create Reel
+  - 📚 Library
+  - ⚙️ Settings
+- User profile section at bottom
+
+**Main Content:**
+- Welcome banner: "Welcome back, [Name]"
+- Stats cards (3 columns):
+  - Reels Generated: [count]
+  - Total Views: [count]
+  - Time Saved: [minutes]
+- Quick Action Card:
+  - Large upload icon
+  - "Create New Reel" button
+  - Or drag and drop
+- Recent Projects section:
+  - Grid of project cards (3 columns)
+  - Each card: thumbnail, title, date, status
+
+**Empty State:**
+- Illustration
+- "No projects yet"
+- "Create your first reel to get started"
+- CTA button
+
+**Project Card:**
+- Video thumbnail
+- Title
+- Date created
+- Status badge (Processing, Ready, Failed)
+- Hover: Show "Open", "Delete" actions
+
+---
+
+### 4. Create Reel Page (`/create`)
+
+**Same as Landing Upload Panel but with:**
+- Dashboard layout wrapper
+- Breadcrumb: Dashboard > Create
+- Larger upload area
+- Advanced options (expandable):
+  - Preferred clip duration (20-40s slider)
+  - Number of reels (1-5)
+  - Target platform presets
+
+---
+
+### 5. Processing Screen (`/processing/:id`)
+
+**Layout:**
+- Centered processing card (max-width 600px)
+- Video preview at top (original video)
+- Metadata row: filename, duration, size
+- Large progress bar
+- Step indicator (vertical timeline)
+- Status text
+- Cancel button
+
+**Step Indicator:**
+1. ✓ Uploading video (completed)
+2. 🔄 Transcribing audio (active)
+3. ⏳ Finding highlights (pending)
+4. ⏳ Cutting clips (pending)
+5. ⏳ Formatting reels (pending)
+
+**Progress Bar:**
+- Animated gradient fill
+- Percentage text
+- Estimated time remaining
+
+**Animations:**
+- Pulsing active step
+- Smooth progress bar fill
+- Rotating loader icon
+
+**States:**
+- Processing (animated)
+- Error (show error message, "Retry" and "Go Back" buttons)
+- Cancelling (show confirmation modal)
+
+---
+
+### 6. Reel Editor Screen (`/editor/:projectId`)
+
+**Layout:**
+- Left panel: Timeline and controls (40%)
+- Center: Phone preview (30%)
+- Right panel: Editing tools (30%)
+
+**Phone Preview:**
+- 9:16 aspect ratio container
+- Device frame (iPhone style)
+- Video player with controls
+- Play/pause overlay
+- Safe area guides (dashed lines)
+
+**Timeline:**
+- Horizontal scrollable timeline
+- Video frames as thumbnails
+- Trim handles (start/end)
+- Playhead scrubber
+- Zoom controls
+
+**Editing Tools:**
+- Text Overlay:
+  - Add caption button
+  - Text input
+  - Font selector dropdown
+  - Size slider
+  - Position presets (top, center, bottom)
+  - Color picker
+- Audio:
+  - Volume slider
+  - Fade in/out toggles
+- Export:
+  - Format selector (MP4, MOV)
+  - Quality (720p, 1080p)
+  - "Save Changes" button
+
+**Controls:**
+- Play/Pause
+- Skip backward 5s
+- Skip forward 5s
+- Volume
+- Full timeline view toggle
+
+---
+
+### 7. Results Screen (`/results/:projectId`)
+
+**Layout:**
+- Header with project name and date
+- Action bar: "Download All" and "Create New"
+- Grid of reel cards (3 columns on desktop, 1 on mobile)
+
+**Reel Card:**
+- Video preview (hover to play)
+- Duration badge
+- Platform icons (IG, TikTok, YT)
+- AI-generated caption preview (truncated)
+- Action buttons:
+  - Download (primary)
+  - Edit (secondary)
+  - Copy Caption
+  - Regenerate (with options)
+
+**Download Modal:**
+- Format selection
+- Quality selection
+- Watermark toggle
+- "Download" button
+
+**Regenerate Modal:**
+- "Generate different highlights" option
+- Duration adjustment
+- "Regenerate" button
+
+**Success Toast:**
+- "Reel downloaded successfully"
+- Auto-dismiss after 3s
+
+---
+
+### 8. Library Screen (`/library`)
+
+**Layout:**
+- Search bar at top
+- Filters row:
+  - Status dropdown (All, Ready, Processing, Failed)
+  - Date range picker
+  - Sort by dropdown (Newest, Oldest, Name)
+- Project grid (3 columns)
+
+**Project Card (Detailed):**
+- Large thumbnail
+- Title (editable on hover)
+- Created date
+- Status badge
+- Reel count badge
+- Hover actions:
+  - View Results
+  - Edit
+  - Duplicate
+  - Delete
+
+**Pagination:**
+- Page numbers
+- Previous/Next buttons
+- Items per page: 12
+
+**Empty State:**
+- Illustration (empty folder)
+- "No projects found"
+- "Try adjusting your filters"
+
+---
+
+### 9. Settings Screen (`/settings`)
+
+**Layout:**
+- Tab navigation:
+  - Profile
+  - API Configuration
+  - Export Preferences
+  - Billing (future)
+
+**Profile Tab:**
+- Avatar upload
+- Name input
+- Email (read-only)
+- Change password section
+- "Save Changes" button
+
+**API Configuration Tab:**
+- OpenAI API Key input (password field)
+- "Test Connection" button
+- Status indicator
+- Usage stats (if available)
+
+**Export Preferences:**
+- Default format dropdown
+- Default quality dropdown
+- Watermark settings:
+  - Toggle enable/disable
+  - Logo upload
+  - Position selector
+  - Opacity slider
+
+**Save Feedback:**
+- Success toast
+- Error alerts
+
+---
+
+## 🤖 AI Processing Pipeline
+
+### Detailed Workflow
+
+**Step 1: Video Input**
+- Accept: MP4, MOV, AVI (up to 500MB)
+- Validate file type and size
+- Generate unique project ID
+- Save to `uploads/[projectId]/original.[ext]`
+
+**Step 2: Audio Extraction**
+```javascript
+// Using FFmpeg
+ffmpeg -i input.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 audio.wav
+```
+
+**Step 3: Transcription**
+```javascript
+// Using OpenAI Whisper API
+const transcription = await openai.audio.transcriptions.create({
+  file: fs.createReadStream('audio.wav'),
+  model: 'whisper-1',
+  language: 'en',
+  response_format: 'verbose_json',
+  timestamp_granularities: ['segment']
+});
+```
+
+**Step 4: Highlight Detection**
+```javascript
+// GPT-4 prompt
+const prompt = `You are an expert viral video editor specializing in short-form content for TikTok, Instagram Reels, and YouTube Shorts.
+
+Analyze the following video transcript and identify the 3 BEST moments for creating engaging short-form reels.
+
+CRITERIA:
+- Each clip must be 20-40 seconds long
+- Look for moments with:
+  * High emotional impact
+  * Clear hooks or payoffs
+  * Self-contained stories or ideas
+  * Visual or verbal punchlines
+  * Surprising or valuable information
+- Avoid clips that start mid-sentence or lack context
+- Prioritize content that works standalone
+
+TRANSCRIPT:
+${transcription.text}
+
+TIMESTAMP SEGMENTS:
+${JSON.stringify(transcription.segments)}
+
+Return ONLY valid JSON in this exact format:
+{
+  "clips": [
+    {
+      "start": 12.5,
+      "end": 45.3,
+      "reason": "Strong hook about unexpected benefit",
+      "suggestedCaption": "This changed everything 🔥"
+    }
+  ]
+}`;
+
+const response = await openai.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: prompt }],
+  response_format: { type: 'json_object' }
+});
+```
+
+**Step 5: Video Cutting**
+```javascript
+// For each clip
+ffmpeg -i original.mp4 -ss [start] -t [duration] -c copy clip_temp.mp4
+```
+
+**Step 6: Vertical Formatting**
+```javascript
+// Resize to 1080x1920 (9:16) with smart cropping
+ffmpeg -i clip_temp.mp4 \
+  -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" \
+  -c:a copy \
+  reel_1.mp4
+```
+
+**Step 7: Optional Enhancements**
+- Add subtle zoom effect for engagement
+- Normalize audio levels
+- Add fade in/out
+- Generate auto-captions using Whisper
+
+**Step 8: Save & Return**
+- Save to `outputs/[projectId]/reel_[n].mp4`
+- Update project database
+- Return URLs and metadata
+
+---
+
+## 🔌 API Specification
+
+### Base URL
+`http://localhost:5000/api`
+
+### Endpoints
+
+**POST /upload**
+- **Description:** Upload video file or URL
+- **Content-Type:** multipart/form-data or application/json
+- **Request Body (file):**
+  ```javascript
+  {
+    file: File, // via FormData
+    projectName: string (optional)
+  }
+  ```
+- **Request Body (URL):**
+  ```javascript
+  {
+    url: string,
+    type: 'youtube' | 'direct',
+    projectName: string (optional)
+  }
+  ```
+- **Response:**
+  ```javascript
+  {
+    success: true,
+    projectId: string,
+    videoPath: string,
+    metadata: {
+      filename: string,
+      size: number,
+      duration: number,
+      format: string
+    }
+  }
+  ```
+
+**POST /process**
+- **Description:** Start AI processing
+- **Request Body:**
+  ```javascript
+  {
+    projectId: string,
+    options: {
+      clipCount: number (default: 3),
+      minDuration: number (default: 20),
+      maxDuration: number (default: 40)
+    }
+  }
+  ```
+- **Response:**
+  ```javascript
+  {
+    success: true,
+    projectId: string,
+    status: 'processing'
+  }
+  ```
+
+**GET /process/:projectId/status**
+- **Description:** Get processing status
+- **Response:**
+  ```javascript
+  {
+    projectId: string,
+    status: 'uploading' | 'transcribing' | 'analyzing' | 'cutting' | 'formatting' | 'completed' | 'failed',
+    progress: number (0-100),
+    currentStep: string,
+    estimatedTimeRemaining: number (seconds),
+    error: string (if failed)
+  }
+  ```
+
+**GET /projects**
+- **Description:** Get all projects
+- **Query Params:**
+  - page: number
+  - limit: number
+  - status: string
+  - sort: 'newest' | 'oldest'
+- **Response:**
+  ```javascript
+  {
+    projects: [
+      {
+        id: string,
+        name: string,
+        createdAt: timestamp,
+        status: string,
+        thumbnail: string,
+        reelCount: number,
+        originalVideo: {
+          filename: string,
+          duration: number,
+          size: number
+        }
+      }
+    ],
+    total: number,
+    page: number,
+    pages: number
+  }
+  ```
+
+**GET /projects/:projectId**
+- **Description:** Get project details
+- **Response:**
+  ```javascript
+  {
+    id: string,
+    name: string,
+    createdAt: timestamp,
+    status: string,
+    originalVideo: { ... },
+    reels: [
+      {
+        id: string,
+        url: string,
+        thumbnail: string,
+        duration: number,
+        caption: string,
+        start: number,
+        end: number
+      }
+    ],
+    transcript: string
+  }
+  ```
+
+**GET /reels/:projectId/:reelId/download**
+- **Description:** Download specific reel
+- **Query Params:**
+  - format: 'mp4' | 'mov'
+  - quality: '720p' | '1080p'
+- **Response:** Video file stream
+
+**POST /edit**
+- **Description:** Edit reel (trim, add captions)
+- **Request Body:**
+  ```javascript
+  {
+    projectId: string,
+    reelId: string,
+    edits: {
+      trim: {
+        start: number,
+        end: number
+      },
+      caption: {
+        text: string,
+        font: string,
+        size: number,
+        color: string,
+        position: 'top' | 'center' | 'bottom'
+      },
+      audio: {
+        volume: number (0-100),
+        fadeIn: boolean,
+        fadeOut: boolean
+      }
+    }
+  }
+  ```
+- **Response:**
+  ```javascript
+  {
+    success: true,
+    reelUrl: string
+  }
+  ```
+
+**DELETE /projects/:projectId**
+- **Description:** Delete project and all reels
+- **Response:**
+  ```javascript
+  {
+    success: true,
+    deletedProjectId: string
+  }
+  ```
+
+---
+
+## 🎨 Design System
+
+### Colors
+
+```javascript
+const colors = {
+  // Primary
+  primary: {
+    50: '#EFF6FF',
+    100: '#DBEAFE',
+    500: '#3B82F6',
+    600: '#2563EB',
+    700: '#1D4ED8'
+  },
+  
+  // Success
+  success: {
+    50: '#ECFDF5',
+    500: '#10B981',
+    600: '#059669'
+  },
+  
+  // Warning
+  warning: {
+    50: '#FFFBEB',
+    500: '#F59E0B',
+    600: '#D97706'
+  },
+  
+  // Error
+  error: {
+    50: '#FEF2F2',
+    500: '#EF4444',
+    600: '#DC2626'
+  },
+  
+  // Neutral
+  gray: {
+    50: '#FAFAFA',
+    100: '#F5F5F5',
+    200: '#E5E5E5',
+    300: '#D4D4D4',
+    400: '#A3A3A3',
+    500: '#737373',
+    600: '#525252',
+    700: '#404040',
+    800: '#262626',
+    900: '#171717'
+  }
+}
+```
+
+### Typography
+
+```javascript
+const typography = {
+  fontFamily: {
+    sans: ['Inter', 'system-ui', 'sans-serif'],
+    mono: ['Fira Code', 'monospace']
+  },
+  
+  fontSize: {
+    xs: '0.75rem',    // 12px
+    sm: '0.875rem',   // 14px
+    base: '1rem',     // 16px
+    lg: '1.125rem',   // 18px
+    xl: '1.25rem',    // 20px
+    '2xl': '1.5rem',  // 24px
+    '3xl': '1.875rem',// 30px
+    '4xl': '2.25rem', // 36px
+    '5xl': '3rem'     // 48px
+  },
+  
+  fontWeight: {
+    normal: 400,
+    medium: 500,
+    semibold: 600,
+    bold: 700
+  }
+}
+```
+
+### Spacing
+
+```javascript
+const spacing = {
+  1: '0.25rem',   // 4px
+  2: '0.5rem',    // 8px
+  3: '0.75rem',   // 12px
+  4: '1rem',      // 16px
+  6: '1.5rem',    // 24px
+  8: '2rem',      // 32px
+  12: '3rem',     // 48px
+  16: '4rem',     // 64px
+  24: '6rem'      // 96px
+}
+```
+
+### Border Radius
+
+```javascript
+const borderRadius = {
+  sm: '0.375rem',  // 6px
+  md: '0.5rem',    // 8px
+  lg: '0.75rem',   // 12px
+  xl: '1rem',      // 16px
+  full: '9999px'
+}
+```
+
+### Shadows
+
+```javascript
+const shadows = {
+  sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+  md: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+  lg: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+  xl: '0 20px 25px -5px rgb(0 0 0 / 0.1)'
+}
+```
+
+### Component Styles
+
+**Button:**
+```css
+.btn-primary {
+  bg: primary-500
+  text: white
+  padding: 12px 24px
+  border-radius: lg
+  font-weight: semibold
+  shadow: md
+  hover: bg-primary-600, shadow-lg
+  transition: all 0.2s
+}
+
+.btn-secondary {
+  bg: transparent
+  text: gray-700
+  border: 2px solid gray-300
+  padding: 12px 24px
+  hover: bg-gray-50
+}
+```
+
+**Card:**
+```css
+.card {
+  bg: white
+  border-radius: xl
+  shadow: md
+  padding: 24px
+  border: 1px solid gray-200
+  hover: shadow-lg
+  transition: shadow 0.3s
+}
+```
+
+**Input:**
+```css
+.input {
+  bg: white
+  border: 2px solid gray-300
+  border-radius: lg
+  padding: 12px 16px
+  focus: border-primary-500, ring-4 ring-primary-100
+  transition: all 0.2s
+}
+```
+
+---
+
+## 🔒 Security & Validation
+
+### File Upload Validation
+
+```javascript
+const ALLOWED_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo'];
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+
+function validateUpload(file) {
+  if (!ALLOWED_TYPES.includes(file.mimetype)) {
+    throw new Error('Invalid file type. Only MP4, MOV, and AVI are allowed.');
+  }
+  
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error('File too large. Maximum size is 500MB.');
+  }
+  
+  return true;
+}
+```
+
+### Environment Variables
+
+```bash
+# .env
+NODE_ENV=development
+PORT=5000
+OPENAI_API_KEY=sk-...
+MAX_UPLOAD_SIZE=524288000
+ALLOWED_ORIGINS=http://localhost:3000
+```
+
+### API Key Protection
+
+- Never expose API keys in client-side code
+- Store in `.env` file (never commit)
+- Access via `process.env.OPENAI_API_KEY`
+- Validate on server startup
+
+### Rate Limiting
+
+```javascript
+const rateLimit = require('express-rate-limit');
+
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 uploads per window
+  message: 'Too many uploads. Please try again later.'
+});
+
+app.post('/api/upload', uploadLimiter, uploadHandler);
+```
+
+---
+
+## 📦 Installation & Setup
+
+### Replit Configuration
+
+**`.replit` file:**
+```toml
+run = "npm run dev"
+modules = ["nodejs-20"]
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "npm run build && npm start"]
+```
+
+**`replit.nix` file:**
+```nix
+{ pkgs }: {
+  deps = [
+    pkgs.nodejs-20_x
+    pkgs.ffmpeg-full
+    pkgs.python311
+  ];
+}
+```
+
+### Package.json Scripts
+
+**Root `package.json`:**
+```json
+{
+  "name": "reelforge-ai",
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm install && cd client && npm install",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "nodemon server/server.js",
+    "client": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "start": "NODE_ENV=production node server/server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "fluent-ffmpeg": "^2.1.2",
+    "openai": "^4.20.1",
+    "ytdl-core": "^4.11.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.1",
+    "express-rate-limit": "^7.1.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "concurrently": "^8.2.2"
+  }
+}
+```
+
+**Client `package.json`:**
+```json
+{
+  "name": "reelforge-client",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.1",
+    "framer-motion": "^10.16.16",
+    "lucide-react": "^0.263.1",
+    "axios": "^1.6.2"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build"
+  },
+  "devDependencies": {
+    "react-scripts": "5.0.1",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32"
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead"],
+    "development": ["last 1 chrome version"]
+  }
+}
+```
+
+### Setup Steps
+
+1. **Clone/Create Project in Replit**
+2. **Run:** `npm run install:all`
+3. **Configure `.env`:** Add OpenAI API key
+4. **Run:** `npm run dev`
+5. **Access:** Client on port 3000, Server on port 5000
+
+---
+
+## 🚀 Deployment Checklist
+
+- [ ] Environment variables set
+- [ ] FFmpeg installed
+- [ ] Upload/output directories created
+- [ ] CORS configured
+- [ ] Rate
